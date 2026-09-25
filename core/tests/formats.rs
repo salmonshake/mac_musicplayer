@@ -24,7 +24,7 @@ fn check(name: &str, rate: f64, expected_frames: i64) {
         }
         total += n as i64;
     }
-    assert!((total - expected_frames).abs() <= 3000, "{name}: frames {total} vs {expected_frames}");
+    assert_eq!(total, expected_frames, "{name} frames");
 }
 
 #[test]
