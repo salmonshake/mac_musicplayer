@@ -10,3 +10,7 @@
 
 ## 仕様
 - 全体仕様・絶対ルールは docs/spec.md、GUI イメージは docs/gui-mockup.webp
+- local-worker は終了後に自分で `cargo clippy --workspace --all-targets -D warnings` と `cargo test --workspace` を実行して検証し、
+  失敗（またはターン上限）なら自動で Opus（~/bin/ask-opus）に助言を求めて 1 回だけ再試行する。
+  出力の最終行 `local-worker: RESULT=ok|failed escalated=yes|no` を必ず確認する（ok でもレビューは省略しない）。
+  「2回失敗」の数え方: RESULT=failed を 1 回の失敗とする
