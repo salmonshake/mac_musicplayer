@@ -1,0 +1,16 @@
+[package]
+name = "mmp-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "mmp_core"
+path = "src/lib.rs"
+
+[dependencies]
+objc2-core-audio-types = "0.3.2"
+objc2-audio-toolbox = { version = "0.3.2", default-features = false, features = ["std", "AUComponent", "AudioComponent", "AudioOutputUnit", "AudioUnitProperties", "ExtendedAudioFile", "objc2-core-foundation", "objc2-core-audio-types"] }
+objc2-core-foundation = "0.3.2"
+rtrb = "0.4.0"
+thiserror = "2.0.21"
