@@ -239,3 +239,55 @@
 - 内容: `play_file_blocking` を `decode::open` 経由に変更（`PlaybackError` に `Decode(#[from] DecodeError)` 追加）
 - テスト: 段階1・2 の全テスト音源（FLAC 2, WAV, AIFF, MP3, Ogg, ALAC, AAC, HE-AAC）を `decode::open` で開き、2ch・期待レート、read 合計フレームが 期待値 ±3000 フレーム（MP3/AAC の priming 分の誤差を許容。厳密化は段階3）。テスト音源が無ければ skip
 - 完了条件: 全テスト・clippy 成功。`play` サンプルで ogg と heaac が約 3 秒で exit 0
+
+---
+
+## 段階3: ギャップレス再生
+
+調査結果（2026-09-26、実ファイルで計測）:
+- ExtAudioFile は AAC/HE-AAC（m4a の priming/remainder 情報）と MP3 の LAME タグ（encoder delay/padding）を読み、
+  **デコード時点で正確にトリムする**（`lame -b 192` / `-V 2` とも 132300 フレーム丁度。afinfo: `132300 valid frames + 576 priming + 756 remainder`）
+- symphonia の Vorbis も 132300 丁度
+- sox で作った MP3 は Xing/LAME タグが無く、原理的にトリム不能（+1332）。テスト音源は lame で作り直す
+- よって段階3でトリム処理の自前実装は不要。やることは「テスト厳密化」と「複数曲を途切れなく流す再生ループ」
+
+再生ループの方針:
+- 1 本のデコードループが曲を順に処理し、同じリングバッファ・同じ OutputUnit に書き続ける（曲間で止めない）
+- 次曲のデコーダは現在曲の再生開始時に先に open しておく（open の遅延で途切れないように）
+- 次曲の `StreamInfo`（sample_rate, channels）が現在と異なる場合のみ、リングが空になるまで待って OutputUnit を作り直す（この場合の隙間は許容）
+- 開けない・読めない曲はスキップして次へ進み、失敗リストとして返す（落ちない）
+
+### Task 3.1 テスト音源: lame 版 MP3 とギャップレス用ペア
+- ファイル: `scripts/gen-test-audio.sh`
+- 内容:
+  - 既存の `sox testdata/_src_44k16.wav testdata/sine440.mp3` 行を `lame --quiet -b 192 testdata/_src_44k16.wav testdata/sine440.mp3` に置き換え（lame が無ければ brew install lame を案内して exit 1）
+  - `testdata/_src6s_44k16.wav`: `sox -n -r 44100 -b 16 -c 2 ... synth 6.0 sine 440 gain -6`
+  - 2 分割: `sox _src6s_44k16.wav testdata/_gap_a.wav trim 0 132300s` と `sox _src6s_44k16.wav testdata/_gap_b.wav trim 132300s`
+  - 各パートを変換: `gap_a.flac`/`gap_b.flac`（sox）, `gap_a.mp3`/`gap_b.mp3`（lame -b 192）, `gap_a.m4a`/`gap_b.m4a`（afconvert -f m4af -d aac -b 192000）, `gap_a.ogg`/`gap_b.ogg`（sox）
+- 完了条件: 生成物が揃い、`afinfo testdata/sine440.mp3` に `132300 valid frames` が出る
+
+### Task 3.2 テスト厳密化とつなぎ目テスト
+- ファイル: `core/tests/formats.rs`, `core/tests/gapless.rs`（新規）
+- formats.rs: 許容誤差 3000 → 0（全フォーマットでフレーム数完全一致）
+- gapless.rs: 各フォーマット（flac, mp3, m4a, ogg）について `gap_a.*` → `gap_b.*` の順に `decode::open` して全サンプルを 1 本の Vec<f32> に連結し、
+  - 総フレーム数 == 264600
+  - つなぎ目（フレーム 132300）前後 ±2048 フレームで、隣接サンプルの差の絶対値の最大が 0.1 未満（440Hz・-6dB サインの隣接差は最大約 0.031。隙間やクリックがあると大きくなる）
+  - FLAC のみ追加: `_src6s_44k16.wav` をデコードした参照と全サンプルで差の最大が 1e-4 未満
+- 完了条件: 全テスト・clippy 成功
+
+### Task 3.3 複数曲のギャップレス再生ループ
+- ファイル: `core/src/playback.rs`
+- 型:
+  ```rust
+  pub struct TrackFailure { pub path: PathBuf, pub error: PlaybackError }
+  /// paths を順に途切れなく再生する。出力デバイスを開けない等の致命的エラーのみ Err。
+  /// 開けない/読めない曲はスキップして TrackFailure に積む
+  pub fn play_files_blocking(paths: &[PathBuf]) -> Result<Vec<TrackFailure>, PlaybackError>;
+  ```
+  - 既存 `play_file_blocking(path)` は `play_files_blocking(&[path.to_path_buf()])` を呼び、失敗が 1 件あればそのエラーを返す薄いラッパーにする
+- 完了条件: build・clippy・全テスト成功
+
+### Task 3.4 CLI を複数ファイル対応に
+- ファイル: `core/examples/play.rs`
+- 内容: `play <file>...`（1 個以上）。`play_files_blocking` を使い、スキップした曲は stderr に表示。致命的エラーは exit 1、引数なしは exit 2
+- 完了条件: `play testdata/gap_a.flac testdata/gap_b.flac` が約 6 秒で exit 0（つなぎ目の音切れの有無は耳で確認）
