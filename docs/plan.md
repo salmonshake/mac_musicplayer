@@ -358,12 +358,15 @@
 
 ### Task 4.4 再生ループへの組み込み
 - ファイル: `core/src/playback.rs`
-- 内容: `pub struct PlaybackOptions { pub device_uid: Option<String> }`（Default 実装）。`play_files_blocking(paths, &PlaybackOptions)` に変更（`play_file_blocking` はデフォルト値で呼ぶ）
-  - 開始時: uid 指定があれば `find_output_device_by_uid`、見つからなければデフォルトで再生し警告をスキップ扱いにしない（`TrackFailure` ではなく戻り値に含めない。代わりに `eprintln` 禁止なので無視してよい）
-  - `DeviceWatcher` を再生中保持し、`stream` のループ内で `try_recv` を確認。`DevicesChanged` かつ指定デバイスが `is_alive` でない → デバイス指定を捨ててデフォルトで出力を作り直す（新しいリングを作り、以降はそこへ書く）
+- 内容: `pub struct PlaybackOptions { pub device_uid: Option<String> }`（Default 実装）と
+  `pub struct PlaybackReport { pub failures: Vec<TrackFailure>, pub device_fallback: bool }`。
+  `play_files_blocking(paths, &PlaybackOptions) -> Result<PlaybackReport, PlaybackError>` に変更（`play_file_blocking` はデフォルト値で呼ぶ）
+  - 開始時: uid 指定があれば `find_output_device_by_uid`。見つからなければデフォルトで再生し `device_fallback = true`（ライブラリ内で print しない）
+  - `DeviceWatcher` を再生中保持し、`stream` のループ内で `try_recv` を確認。`DevicesChanged` かつ指定デバイスが `is_alive` でない → デバイス指定を捨ててデフォルトで出力を作り直す（新しいリングを作り、以降はそこへ書く）。この場合も `device_fallback = true`
 - 完了条件: build・clippy・全テスト成功
 
 ### Task 4.5 CLI のデバイス対応
 - ファイル: `core/examples/play.rs`
 - 内容: `play --list-devices`（`* ` 印でデフォルト、`uid  name  ch  rate  [BT]` を 1 行ずつ）、`play --device <uid> <file>...`
+- 内容（追記）: `device_fallback` が true なら stderr に「指定デバイスが見つからない/外れたためデフォルト出力で再生」と表示
 - 完了条件: `--list-devices` が一覧を表示して exit 0、存在しない uid 指定でもデフォルトで再生して exit 0
