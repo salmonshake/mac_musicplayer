@@ -291,3 +291,79 @@
 - ファイル: `core/examples/play.rs`
 - 内容: `play <file>...`（1 個以上）。`play_files_blocking` を使い、スキップした曲は stderr に表示。致命的エラーは exit 1、引数なしは exit 2
 - 完了条件: `play testdata/gap_a.flac testdata/gap_b.flac` が約 6 秒で exit 0（つなぎ目の音切れの有無は耳で確認）
+
+---
+
+## 段階4: 出力デバイス列挙・切り替え、抜き差し対応
+
+方針:
+- デバイス未指定: 従来どおり `kAudioUnitSubType_DefaultOutput`（システムのデフォルト出力変更に AU 自体が追従する）
+- デバイス指定: `kAudioUnitSubType_HALOutput` + `kAudioOutputUnitProperty_CurrentDevice` で固定
+- システムオブジェクトの `Devices` / `DefaultOutputDevice` 変化を監視し、指定デバイスが消えたらデフォルトにフォールバックして出力を作り直す（リング内の最大 0.5 秒は失われてよい）
+- リスナーのコールバックは Core Audio の通知スレッドで呼ばれる（レンダースレッドではない）。中では `mpsc::Sender::send` だけ行う
+
+### 依存の追加（段階4、確認済み 2026-09-26）
+| crate | version | features |
+|---|---|---|
+| objc2-core-audio | 0.3.2 | default-features = false, `std`, `AudioHardware`, `objc2-core-audio-types`, `objc2-core-foundation` |
+
+参照した API（objc2-core-audio 0.3.2）:
+- `AudioObjectID = u32`, `kAudioObjectSystemObject: c_int = 1`（u32 にキャスト）, `kAudioObjectUnknown = 0`
+- `AudioObjectPropertyAddress { mSelector, mScope, mElement }`
+- `AudioObjectGetPropertyDataSize(id, NonNull<Address>, 0, null, NonNull<u32>) -> OSStatus`
+- `AudioObjectGetPropertyData(id, NonNull<Address>, 0, null, NonNull<u32> io_size, NonNull<c_void>) -> OSStatus`
+- `AudioObjectAddPropertyListener(id, NonNull<Address>, AudioObjectPropertyListenerProc, *mut c_void) -> OSStatus` / `AudioObjectRemovePropertyListener`（同じ引数）
+- `AudioObjectPropertyListenerProc = Option<unsafe extern "C-unwind" fn(AudioObjectID, u32, NonNull<AudioObjectPropertyAddress>, *mut c_void) -> OSStatus>`
+- セレクタ: `kAudioHardwarePropertyDevices`, `kAudioHardwarePropertyDefaultOutputDevice`, `kAudioDevicePropertyStreamConfiguration`（出力 scope、`AudioBufferList` 可変長。各 `mBuffers[i].mNumberChannels` の合計がチャンネル数）, `kAudioObjectPropertyName` / `kAudioDevicePropertyDeviceUID`（`CFStringRef` を返す。呼び出し側が所有 → `CFRetained::from_raw` で受け、`to_string()`）, `kAudioDevicePropertyTransportType`（u32）, `kAudioDevicePropertyNominalSampleRate`（f64）, `kAudioDevicePropertyDeviceIsAlive`（u32）
+- スコープ/要素: `kAudioObjectPropertyScopeGlobal`, `kAudioObjectPropertyScopeOutput`, `kAudioObjectPropertyElementMain`
+- `kAudioDeviceTransportTypeBluetooth` / `kAudioDeviceTransportTypeBluetoothLE`（段階12 のビットパーフェクト判定で使う）
+- AudioToolbox: `kAudioOutputUnitProperty_CurrentDevice`（scope Global, element 0, 値は AudioObjectID）
+
+### Task 4.1 デバイス列挙
+- ファイル: `core/Cargo.toml`, `core/src/coreaudio/device.rs`（+ `mod.rs`）, `core/tests/device.rs`
+- 型:
+  ```rust
+  pub type DeviceId = u32;
+  #[derive(Debug, Clone, PartialEq)]
+  pub struct DeviceInfo { pub id: DeviceId, pub uid: String, pub name: String,
+      pub output_channels: u32, pub nominal_sample_rate: f64, pub transport_type: u32 }
+  impl DeviceInfo { pub fn is_bluetooth(&self) -> bool; }
+  /// 出力チャンネルが 1 以上のデバイスのみ
+  pub fn output_devices() -> Result<Vec<DeviceInfo>>;
+  pub fn default_output_device() -> Result<DeviceId>;
+  pub fn find_output_device_by_uid(uid: &str) -> Result<Option<DeviceInfo>>;
+  pub fn is_alive(id: DeviceId) -> bool;   // 取得失敗は false
+  ```
+  - 個々のデバイスで名前等の取得に失敗しても列挙全体を失敗させず、そのデバイスをスキップ
+- 完了条件: テスト — `output_devices()` が 1 件以上（0 件なら skip）で全件 output_channels > 0・uid 非空、`default_output_device()` の ID が一覧に含まれる、`find_output_device_by_uid` が一覧の先頭の uid で見つかり、存在しない uid で None、`is_alive(0)` が false。全テスト・clippy 成功
+
+### Task 4.2 OutputUnit のデバイス指定
+- ファイル: `core/src/coreaudio/output.rs`, `core/src/playback.rs`, `core/tests/output_unit.rs`
+- 内容: `OutputUnit::new(info, consumer, device: Option<DeviceId>)`。`Some(id)` なら HALOutput を探し、`configure` の前に `kAudioOutputUnitProperty_CurrentDevice` を設定。`None` は従来どおり DefaultOutput。既存呼び出しは `None` を渡す
+- 完了条件: テスト追加 — `default_output_device()` の ID を明示指定して new/start/stop 成功。全テスト・clippy 成功
+
+### Task 4.3 デバイス変化の監視
+- ファイル: `core/src/coreaudio/device_watch.rs`（+ `mod.rs`）, `core/tests/device_watch.rs`
+- 型:
+  ```rust
+  #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+  pub enum DeviceEvent { DevicesChanged, DefaultOutputChanged }
+  pub struct DeviceWatcher { sender: *mut std::sync::mpsc::Sender<DeviceEvent> }
+  impl DeviceWatcher { pub fn new() -> Result<(Self, std::sync::mpsc::Receiver<DeviceEvent>)>; }
+  impl Drop  // 両リスナーを Remove してから Box::from_raw(sender)
+  ```
+  - システムオブジェクトの `Devices` と `DefaultOutputDevice`（scope Global, element Main）に同じコールバックを登録し、`in_addresses` の各 `mSelector` を見てイベントを送る。送信失敗は無視
+  - 2 つ目の登録に失敗したら 1 つ目を Remove し、Box を解放して Err
+- 完了条件: テスト — new → drop がエラー・クラッシュなし。全テスト・clippy 成功（実際の抜き差しは手動確認）
+
+### Task 4.4 再生ループへの組み込み
+- ファイル: `core/src/playback.rs`
+- 内容: `pub struct PlaybackOptions { pub device_uid: Option<String> }`（Default 実装）。`play_files_blocking(paths, &PlaybackOptions)` に変更（`play_file_blocking` はデフォルト値で呼ぶ）
+  - 開始時: uid 指定があれば `find_output_device_by_uid`、見つからなければデフォルトで再生し警告をスキップ扱いにしない（`TrackFailure` ではなく戻り値に含めない。代わりに `eprintln` 禁止なので無視してよい）
+  - `DeviceWatcher` を再生中保持し、`stream` のループ内で `try_recv` を確認。`DevicesChanged` かつ指定デバイスが `is_alive` でない → デバイス指定を捨ててデフォルトで出力を作り直す（新しいリングを作り、以降はそこへ書く）
+- 完了条件: build・clippy・全テスト成功
+
+### Task 4.5 CLI のデバイス対応
+- ファイル: `core/examples/play.rs`
+- 内容: `play --list-devices`（`* ` 印でデフォルト、`uid  name  ch  rate  [BT]` を 1 行ずつ）、`play --device <uid> <file>...`
+- 完了条件: `--list-devices` が一覧を表示して exit 0、存在しない uid 指定でもデフォルトで再生して exit 0
