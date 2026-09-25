@@ -1,0 +1,22 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+/.claude/
+
+# Audio files (never commit; generate test audio via scripts)
+*.flac
+*.m4a
+*.alac
+*.mp3
+*.aac
+*.wav
+*.aif
+*.aiff
+*.ogg
+*.oga
+*.opus
