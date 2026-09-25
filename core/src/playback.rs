@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
-use crate::coreaudio::ext_audio_file::{ExtAudioFile, StreamInfo};
+use crate::decode::{self, DecodeError};
 use crate::coreaudio::output::OutputUnit;
 use crate::coreaudio::error::CoreAudioError;
 use thiserror::Error;
@@ -10,6 +10,8 @@ use thiserror::Error;
 pub enum PlaybackError {
     #[error(transparent)]
     CoreAudio(#[from] CoreAudioError),
+    #[error(transparent)]
+    Decode(#[from] DecodeError),
 }
 
 /// Plays a single audio file in a blocking manner.
@@ -17,9 +19,8 @@ pub enum PlaybackError {
 /// This function opens the file, sets up the audio output, and streams the audio
 /// data from the file to the output unit until the end of the file is reached.
 pub fn play_file_blocking(path: &Path) -> Result<(), PlaybackError> {
-    let mut file = ExtAudioFile::open(path)?;
-    let info: StreamInfo = file.file_info()?;
-    file.set_client_f32_interleaved(&info)?;
+    let mut decoder = decode::open(path)?;
+    let info = decoder.info();
 
     let capacity = ((info.sample_rate * info.channels as f64 * 0.5) as usize).max(4096);
     let (mut producer, consumer) = rtrb::RingBuffer::<f32>::new(capacity);
@@ -30,7 +31,7 @@ pub fn play_file_blocking(path: &Path) -> Result<(), PlaybackError> {
     let mut buf = vec![0.0f32; 4096 * info.channels as usize];
 
     loop {
-        let frames = file.read(&mut buf)?;
+        let frames = decoder.read(&mut buf)?;
         if frames == 0 {
             break;
         }
