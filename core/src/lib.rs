@@ -3,4 +3,5 @@
 pub mod coreaudio;
 pub mod decode;
 pub mod library;
+pub mod paths;
 pub mod playback;
