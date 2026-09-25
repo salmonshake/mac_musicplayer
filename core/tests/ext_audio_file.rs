@@ -12,13 +12,8 @@ fn test_open_empty_file() {
     let p = std::env::temp_dir().join("mmp_core_empty_test.flac");
     std::fs::write(&p, b"").unwrap();
     let result = ExtAudioFile::open(&p);
-
-    if let Ok(file) = result {
-        assert_eq!(file.length_frames().unwrap(), 0);
-    } else {
-        // If it returns Err, it's also acceptable according to instructions
-    }
     std::fs::remove_file(&p).ok();
+    assert!(result.is_err());
 }
 
 #[test]
@@ -55,4 +50,32 @@ fn test_ext_audio_file_full_flow() {
     }
 
     assert_eq!(total_read_frames, total_frames);
+}
+
+#[test]
+fn test_heaac_aac_sample_rates() {
+    let testdata_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .map(|s| std::path::Path::new(&s).parent().unwrap().join("testdata"))
+        .unwrap_or_else(|_| std::path::Path::new("/tmp").to_path_buf());
+
+    let heaac_path = testdata_dir.join("sine440_heaac.m4a");
+    let aac_path = testdata_dir.join("sine440_aac.m4a");
+
+    if heaac_path.exists() {
+        let file = ExtAudioFile::open(&heaac_path).expect("Failed to open HE-AAC file");
+        let info = file.file_info().expect("Failed to get HE-AAC file info");
+        assert_eq!(info.sample_rate, 44100.0);
+        assert_eq!(info.channels, 2);
+    } else {
+        eprintln!("Skipping HE-AAC test: {} does not exist", heaac_path.display());
+    }
+
+    if aac_path.exists() {
+        let file = ExtAudioFile::open(&aac_path).expect("Failed to open AAC file");
+        let info = file.file_info().expect("Failed to get AAC file info");
+        assert_eq!(info.sample_rate, 44100.0);
+        assert_eq!(info.channels, 2);
+    } else {
+        eprintln!("Skipping AAC test: {} does not exist", aac_path.display());
+    }
 }

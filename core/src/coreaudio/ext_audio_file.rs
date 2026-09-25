@@ -1,15 +1,16 @@
 use std::path::Path;
-use std::ptr::NonNull;
+use std::ptr::{NonNull, null_mut};
 use std::ffi::c_void;
 use objc2_audio_toolbox::{
     ExtAudioFileDispose, ExtAudioFileGetProperty, ExtAudioFileOpenURL, ExtAudioFileRead,
-    ExtAudioFileSetProperty, kExtAudioFileProperty_ClientDataFormat,
+    ExtAudioFileSetProperty, ExtAudioFileRef, kExtAudioFileProperty_ClientDataFormat,
     kExtAudioFileProperty_FileDataFormat, kExtAudioFileProperty_FileLengthFrames,
-    ExtAudioFileRef,
+    kExtAudioFileProperty_AudioFile, kAudioFilePropertyFormatList,
+    AudioFileID, AudioFileGetPropertyInfo, AudioFileGetProperty,
 };
 use objc2_core_audio_types::{
     kAudioFormatFlagsNativeFloatPacked, kAudioFormatLinearPCM, AudioBuffer, AudioBufferList,
-    AudioStreamBasicDescription,
+    AudioStreamBasicDescription, AudioFormatListItem,
 };
 use objc2_core_foundation::CFURL;
 use crate::coreaudio::error::{check, CoreAudioError, Result};
@@ -32,7 +33,7 @@ impl ExtAudioFile {
     /// Opens an audio file from the given path.
     pub fn open(path: &Path) -> Result<Self> {
         let url = CFURL::from_file_path(path).ok_or_else(|| CoreAudioError::InvalidPath(path.to_path_buf()))?;
-        let mut raw = std::ptr::null_mut();
+        let mut raw = null_mut();
         // SAFETY: ExtAudioFileOpenURL is the standard way to open an audio file.
         unsafe {
             check(
@@ -50,8 +51,62 @@ impl ExtAudioFile {
         })
     }
 
+    fn first_format_from_list(&self) -> Option<AudioStreamBasicDescription> {
+        let mut af: AudioFileID = null_mut();
+        let mut size = std::mem::size_of::<AudioFileID>() as u32;
+        // SAFETY: ExtAudioFileGetProperty is safe with valid raw.
+        unsafe {
+            if check(
+                ExtAudioFileGetProperty(self.raw, kExtAudioFileProperty_AudioFile, NonNull::from(&mut size), NonNull::from(&mut af).cast::<c_void>()),
+                "ExtAudioFileGetProperty (AudioFileID)"
+            ).is_err() || af.is_null() {
+                return None;
+            }
+        }
+
+        let mut list_size: u32 = 0;
+        // SAFETY: AudioFileGetPropertyInfo is safe with valid af and property.
+        unsafe {
+            if check(AudioFileGetPropertyInfo(af, kAudioFilePropertyFormatList, &mut list_size, null_mut()), "AudioFileGetPropertyInfo").is_err() {
+                return None;
+            }
+        }
+
+        let n = list_size as usize / std::mem::size_of::<AudioFormatListItem>();
+        if n == 0 {
+            return None;
+        }
+
+        // SAFETY: We pre-allocate and initialize with zeros.
+        let mut items: Vec<AudioFormatListItem> = (0..n).map(|_| unsafe { std::mem::zeroed() }).collect();
+
+        let mut io_size = list_size;
+        let ptr = NonNull::new(items.as_mut_ptr().cast::<c_void>())?;
+        // SAFETY: `items` holds `n` AudioFormatListItem slots, i.e. `io_size` bytes.
+        let status = unsafe {
+            AudioFileGetProperty(af, kAudioFilePropertyFormatList, NonNull::from(&mut io_size), ptr)
+        };
+        if check(status, "AudioFileGetProperty (FormatList)").is_err() {
+            return None;
+        }
+
+        items.first().map(|it| it.mASBD)
+    }
+
     /// Returns the input file format information.
     pub fn file_info(&self) -> Result<StreamInfo> {
+        // Prefer the first (highest-quality) entry of the format list so HE-AAC
+        // reports its SBR output rate rather than the half-rate base layer.
+        if let Some(asbd) = self.first_format_from_list()
+            && asbd.mChannelsPerFrame > 0
+            && asbd.mSampleRate > 0.0
+        {
+            return Ok(StreamInfo {
+                sample_rate: asbd.mSampleRate,
+                channels: asbd.mChannelsPerFrame,
+            });
+        }
+
         // SAFETY: AudioStreamBasicDescription is a plain C struct; all-zero is a valid value.
         let mut format_asb: AudioStreamBasicDescription = unsafe { std::mem::zeroed() };
         let mut size = std::mem::size_of::<AudioStreamBasicDescription>() as u32;
