@@ -502,3 +502,110 @@
 - ファイル: `core/examples/lib.rs`
 - 内容: `lib <db> add <folder>` / `lib <db> scan`（バックグラウンドスキャンの進捗を表示）/ `lib <db> stats`（フォルダ一覧と曲数）/ `lib <db> watch`（Ctrl+C まで監視し、結果を表示）
 - 完了条件: testdata/lib で add → scan → stats が期待どおり
+
+---
+
+## 段階6: egui UI（サイドバー + アルバム一覧 + 曲一覧（仮想化）+ 検索）
+
+方針:
+- 新クレート `app/`（package `mmp-app`、bin 名 `macmusicplay`）。UI 非依存の問い合わせ・パスは core 側に置く
+- 表示用データは起動時・スキャン完了時に DB から `Vec` に読み込み、表の描画は egui_extras `TableBuilder` の `body.rows()` で**見えている行だけ**描く
+- 検索は SQL の `LIKE`（title / artist / album / album_artist）。数万曲なら十分速い。入力のたびではなく 200ms 入力が止まってから再検索
+- 起動時にバックグラウンドで全フォルダを差分スキャンし、同時に `LibraryWatcher` で監視。`ScanEvent::Finished` を受けたら一覧を読み直す
+- 再生は段階7。段階6では選択まで
+- 日本語フォント: 起動時にシステムフォントを読み込む（同梱しない）。候補順: `/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc`, `/System/Library/Fonts/Hiragino Sans GB.ttc`, `/Library/Fonts/Arial Unicode.ttf`。見つからなくても落ちない
+- 画面構成は docs/gui-mockup.webp（左: LIBRARY / GENRES / フォルダ、右: 一覧。上: 検索欄）
+
+### 依存の追加（段階6、確認済み 2026-09-26）
+| crate | version | 用途 |
+|---|---|---|
+| eframe | 0.36.2 | ウィンドウ・egui 実行（app のみ） |
+| egui_extras | 0.36.2 | TableBuilder（app のみ） |
+| rfd | 0.17.2 | フォルダ選択ダイアログ（app のみ） |
+
+参照した API（egui/eframe 0.36.2 — 0.35 以前と異なる点に注意）:
+- `eframe::run_native(app_name, NativeOptions, Box::new(|cc| Ok(Box::new(MyApp::new(cc)))))`
+- **`eframe::App` の必須メソッドは `fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame)`**（旧 `update(ctx, frame)` ではない）。
+  描画しない処理は任意の `fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame)` に書く
+- パネル: `egui::Panel::left("id")` / `Panel::top("id")` … `.show(ui, |ui| ..)`（`show_inside` は非推奨名）。中央は `egui::CentralPanel::default().show(ui, |ui| ..)`
+- フォント: `ctx.add_font(epaint::text::FontInsert { name, data: FontData::from_owned(bytes)（.index で ttc 内の番号）, families: vec![InsertFontFamily { family: FontFamily::Proportional, priority: FontPriority::Lowest }, (Monospace も同様)] })`
+  - `FontData { font, index: u32, tweak }`
+- 表: `TableBuilder::new(ui).striped(true).sense(Sense::click()).column(Column::initial(w).resizable(true))…column(Column::remainder()).header(h, |mut header| { header.col(|ui| ..); }).body(|body| body.rows(row_h, n, |mut row| { let i = row.index(); row.set_selected(..); row.col(|ui| ..); if row.response().clicked() {..} }))`
+- 再描画: `ctx.request_repaint_after(Duration)`
+- rfd: `rfd::FileDialog::new().set_title(..).pick_folder() -> Option<PathBuf>`（メインスレッドで呼ぶ。egui の ui() 内で可）
+
+### Task 6.1 ライブラリ問い合わせ API
+- ファイル: `core/src/library/query.rs`（+ `mod.rs`）
+- 型:
+  ```rust
+  #[derive(Debug, Clone, PartialEq)]
+  pub struct TrackRow { pub id: i64, pub path: PathBuf, pub title: String, pub artist: String, pub album: String,
+      pub album_artist: String, pub album_key: String, pub genre: String, pub track_no: Option<u32>, pub disc_no: Option<u32>,
+      pub year: Option<u32>, pub duration_ms: u64, pub sample_rate: Option<u32>, pub bit_depth: Option<u8>, pub bitrate_kbps: Option<u32> }
+  impl TrackRow { /// 例: "24-bit/96kHz FLAC", "320kbps MP3", "44.1kHz AAC"（拡張子を大文字化。m4a は bit_depth があれば ALAC、無ければ AAC）
+      pub fn format_label(&self) -> String; }
+  #[derive(Debug, Clone, PartialEq)]
+  pub struct AlbumRow { pub album_key: String, pub album: String, pub album_artist: String, pub year: Option<u32>, pub track_count: u32, pub duration_ms: u64 }
+  #[derive(Debug, Clone, Default, PartialEq)]
+  pub struct TrackFilter { pub album_key: Option<String>, pub artist: Option<String>, pub genre: Option<String>, pub search: Option<String> }
+  impl Library {
+      pub fn list_tracks(&self, f: &TrackFilter) -> Result<Vec<TrackRow>, LibraryError>;
+      pub fn list_albums(&self, search: Option<&str>) -> Result<Vec<AlbumRow>, LibraryError>;
+      pub fn list_artists(&self) -> Result<Vec<(String, u32)>, LibraryError>;   // (artist, 曲数)
+      pub fn list_genres(&self) -> Result<Vec<(String, u32)>, LibraryError>;    // 空文字は除く
+  }
+  ```
+  - 並び: album_key 指定時は `disc_no, track_no, title`。それ以外は `album_artist(空なら artist), album, disc_no, track_no`（`COLLATE NOCASE`、NULL は最後）
+  - アルバム: `GROUP BY album_key`、album_artist は effective（`CASE WHEN album_artist = '' THEN artist ELSE album_artist END` の MAX）、year は MAX、並びは album_artist, album
+  - 検索: `%q%` の LIKE（`ESCAPE '\'` で `%` `_` `\` をエスケープ）。title / artist / album / album_artist の OR。空白区切りの複数語は AND
+- 完了条件: `#[cfg(test)]` で open_in_memory + upsert したデータに対し — 並び順、album_key 絞り込み、検索（日本語・大文字小文字・`%` を含む語・複数語 AND）、list_albums の件数と track_count、genre の空除外、format_label の各形式。全テスト・clippy 成功
+
+### Task 6.2 データ保存先
+- ファイル: `core/src/paths.rs`（+ `lib.rs`）
+- 内容: `pub const APP_NAME: &str = "MacMusicPlay"; pub fn data_dir() -> Result<PathBuf, std::io::Error>`（`$HOME/Library/Application Support/MacMusicPlay` を create_dir_all して返す。HOME 未設定は Err）、`pub fn library_db_path() -> Result<PathBuf, std::io::Error>`（data_dir/library.db）
+- 完了条件: テスト（HOME を一時ディレクトリに差し替えて作成されることを確認。テストは `serial` 不要なよう 1 関数にまとめる）、clippy 成功
+
+### Task 6.3 app クレート骨格と日本語フォント
+- ファイル: ルート `Cargo.toml`（members に "app"）, `app/Cargo.toml`, `app/src/main.rs`, `app/src/fonts.rs`
+- 内容: ウィンドウ（タイトル MacMusicPlay、1200x760、最小 800x500）。`fonts::install_cjk_fonts(&egui::Context) -> Option<PathBuf>`（読み込んだフォントのパス）。main は CentralPanel に「MacMusicPlay」と「日本語表示テスト：一曲目」を表示するだけ
+- 完了条件: `cargo build -p mmp-app`、clippy 成功（起動して日本語が表示されるかは指揮役/ユーザーが確認）
+
+### Task 6.4 アプリ状態とバックグラウンドスキャン
+- ファイル: `app/src/state.rs`, `app/src/main.rs`
+- 型:
+  ```rust
+  pub enum Nav { AllTracks, Albums, Album(String /*album_key*/), Artists, Artist(String), Genres, Genre(String) }
+  pub struct AppState { pub lib: Library, pub db_path: PathBuf, pub nav: Nav, pub search: String, search_changed_at: Option<Instant>,
+      pub tracks: Vec<TrackRow>, pub albums: Vec<AlbumRow>, pub artists: Vec<(String,u32)>, pub genres: Vec<(String,u32)>, pub folders: Vec<(i64, PathBuf)>,
+      pub selected_track: Option<usize>, pub scanning: bool, pub status: String,
+      scan_rx: Option<Receiver<ScanEvent>>, watch: Option<(LibraryWatcher, Receiver<ScanEvent>)> }
+  impl AppState {
+      pub fn open() -> Result<Self, String>;       // library_db_path → Library::open → reload → scan_all_in_background 開始
+      pub fn reload(&mut self);                     // nav と search に応じて tracks/albums/…を読み直す（エラーは status に）
+      pub fn set_nav(&mut self, nav: Nav); pub fn set_search(&mut self, s: String);   // search は 200ms 後に reload
+      pub fn add_folder(&mut self, p: PathBuf); pub fn remove_folder(&mut self, p: &Path);  // 追加後はスキャン開始
+      pub fn poll(&mut self, ctx: &egui::Context);  // scan/watch イベント処理・遅延検索。scanning 中は request_repaint_after(250ms)
+  }
+  ```
+  - スキャン完了（AllDone）後に watcher を（作り直して）開始。フォルダ追加・削除時も作り直す
+- 完了条件: build・clippy 成功。main の `logic()` で `poll`、`ui()` はまだ簡易表示（status と曲数）
+
+### Task 6.5 サイドバー
+- ファイル: `app/src/ui/mod.rs`, `app/src/ui/sidebar.rs`
+- 内容: `Panel::left` に LIBRARY（全曲 / アーティスト / アルバム / ジャンル）、GENRES（list_genres 上位を列挙し、クリックで Nav::Genre）、FOLDERS（登録フォルダ名 + 「−」で削除、「フォルダを追加…」で rfd）。選択中の項目はハイライト。スキャン中は下部に「スキャン中…」
+- 完了条件: build・clippy 成功
+
+### Task 6.6 曲一覧（仮想化テーブル）
+- ファイル: `app/src/ui/tracks.rs`
+- 内容: 列 `# / タイトル / 長さ / アーティスト / アルバム / ジャンル / フォーマット`。`body.rows(row_h, state.tracks.len(), ..)` で可視行のみ描画。クリックで選択（`set_selected`）。長さは `m:ss`。空のときは「曲がありません。フォルダを追加してください」
+- 完了条件: build・clippy 成功
+
+### Task 6.7 アルバム一覧・アルバム詳細・アーティスト一覧
+- ファイル: `app/src/ui/albums.rs`
+- 内容: Nav::Albums は `AlbumRow` の仮想化テーブル（アルバム / アーティスト / 年 / 曲数 / 長さ）、クリックで Nav::Album(key)。Nav::Album は上部にアルバム名・アーティスト・「年 • n 曲 • 合計時間」、下に tracks テーブル（6.6 の関数を再利用）。Nav::Artists は (artist, 曲数) のテーブルでクリックで Nav::Artist
+- 完了条件: build・clippy 成功
+
+### Task 6.8 検索欄と全体の組み立て
+- ファイル: `app/src/ui/toolbar.rs`, `app/src/main.rs`
+- 内容: `Panel::top` に検索欄（プレースホルダ「検索」、⌘F でフォーカス、Esc でクリア）と、右端に曲数/ステータス表示。main の `ui()` で toolbar → sidebar → CentralPanel（nav に応じて tracks/albums/artists）を組み立てる
+- 完了条件: build・clippy 成功。testdata/lib を追加した状態で起動し、全曲・アルバム・ジャンル・検索（「テスト」「ogg」）が機能すること（指揮役/ユーザーが確認）
