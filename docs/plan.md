@@ -84,7 +84,7 @@
   pub fn check(status: i32, context: &'static str) -> Result<()>;
   ```
   - `fourcc`: status の 4 バイトがすべて印字可能 ASCII なら `'wht?'` 形式、そうでなければ空文字
-- 完了条件: `cargo test -p mmp-core` 成功。テスト: `check(0, ..)` が Ok、`check(-50, ..)` が Err、`0x77687421` ('wht?') で fourcc が `'wht?'`
+- 完了条件: `cargo test -p mmp-core` 成功。テスト: `check(0, ..)` が Ok、`check(-50, ..)` が Err、`0x7768743f` ('wht?') で fourcc が `'wht?'`
 
 ### Task 1.4 ExtAudioFile 安全ラッパー
 - ファイル: `core/src/coreaudio/ext_audio_file.rs`（+ `mod.rs` に追加）
