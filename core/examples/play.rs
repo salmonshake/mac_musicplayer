@@ -6,12 +6,12 @@ fn main() {
         eprintln!("usage: play <audio file>...");
         std::process::exit(2);
     }
-    match mmp_core::playback::play_files_blocking(&paths) {
-        Ok(failures) => {
-            for f in &failures {
+    match mmp_core::playback::play_files_blocking(&paths, &mmp_core::playback::PlaybackOptions::default()) {
+        Ok(report) => {
+            for f in &report.failures {
                 eprintln!("skipped {}: {}", f.path.display(), f.error);
             }
-            if failures.len() == paths.len() {
+            if report.failures.len() == paths.len() {
                 std::process::exit(1);
             }
         }
