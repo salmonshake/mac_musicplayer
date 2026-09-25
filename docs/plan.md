@@ -608,4 +608,5 @@
 ### Task 6.8 検索欄と全体の組み立て
 - ファイル: `app/src/ui/toolbar.rs`, `app/src/main.rs`
 - 内容: `Panel::top` に検索欄（プレースホルダ「検索」、⌘F でフォーカス、Esc でクリア）と、右端に曲数/ステータス表示。main の `ui()` で toolbar → sidebar → CentralPanel（nav に応じて tracks/albums/artists）を組み立てる
+- 追加: `app/src/state.rs` 先頭の `#![allow(dead_code)]`（6.4 で一時的に付けたもの）を削除し、未使用の項目があれば使うか削除する
 - 完了条件: build・clippy 成功。testdata/lib を追加した状態で起動し、全曲・アルバム・ジャンル・検索（「テスト」「ogg」）が機能すること（指揮役/ユーザーが確認）

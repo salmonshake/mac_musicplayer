@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use rusqlite::{params, Connection};
 
@@ -67,6 +68,8 @@ impl Library {
     /// Enables WAL mode and foreign keys, then creates the schema.
     pub fn open(path: &Path) -> Result<Self, LibraryError> {
         let conn = Connection::open(path).map_err(LibraryError::Db)?;
+        conn.busy_timeout(Duration::from_secs(5))
+            .map_err(LibraryError::Db)?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(LibraryError::Db)?;
         Self::init(&conn)?;
