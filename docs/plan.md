@@ -370,3 +370,135 @@
 - 内容: `play --list-devices`（`* ` 印でデフォルト、`uid  name  ch  rate  [BT]` を 1 行ずつ）、`play --device <uid> <file>...`
 - 内容（追記）: `device_fallback` が true なら stderr に「指定デバイスが見つからない/外れたためデフォルト出力で再生」と表示
 - 完了条件: `--list-devices` が一覧を表示して exit 0、存在しない uid 指定でもデフォルトで再生して exit 0
+
+---
+
+## 段階5: ライブラリ（スキャン・タグ・DB・差分・監視）
+
+方針:
+- ファイルのタグが正。DB（SQLite）はキャッシュで、消しても再スキャンで完全に復元できる（プレイリストは段階8で別ファイル）
+- モジュール: `core/src/library/{mod.rs, error.rs, tags.rs, db.rs, scan.rs, scanner.rs, watch.rs}`
+- 差分判定は (mtime ナノ秒, サイズ)。変化したファイルだけタグを読み直す
+- 監視フォルダが存在しない（外付けドライブが外れた等）ときは、そのフォルダの曲を **削除しない**（`folder_missing` として報告）
+- スキャンと監視はバックグラウンドスレッド。各スレッドは自分の `Connection` を持つ（SQLite は WAL モード）
+- 対象拡張子（小文字比較）: flac, m4a, mp3, aac, wav, aif, aiff, ogg, oga
+- アルバムのグループ化キー: `album_artist`（空なら `artist`）+ `album`。並び: disc_no → track_no
+- タグが無い・壊れている: 落とさない。title はファイル名（拡張子なし）、他は空/None
+- DB の保存先は呼び出し側が決める（アプリ名未定のため。段階6 で `~/Library/Application Support/<アプリ名>/` を決める）
+
+### 依存の追加（段階5、確認済み 2026-09-26）
+| crate | version | features |
+|---|---|---|
+| lofty | 0.25.4 | default |
+| rusqlite | 0.40.2 | `bundled` |
+| notify | 8.2.0（=8.2.0 で固定。9.x は rc のため使わない） | default（macos_fsevent） |
+| walkdir | 2.5.0 | default |
+| tempfile | 3.27.0 | **dev-dependencies のみ** |
+
+参照した API:
+- lofty 0.25.4: `lofty::read_from_path(path) -> Result<TaggedFile, _>`, `use lofty::prelude::*`（`AudioFile, TaggedFileExt, Accessor, ItemKey`）,
+  `tagged.primary_tag().or_else(|| tagged.first_tag())`, `Accessor`: `title() / artist() / album() / genre() -> Option<Cow<str>>`, `track() / disk() -> Option<u32>`, `date() -> Option<Timestamp>`（`Timestamp { year: u16, .. }`）,
+  `tag.get_string(ItemKey::AlbumArtist) -> Option<&str>`, `tagged.properties()`: `duration() -> Duration`, `sample_rate() / audio_bitrate() -> Option<u32>`, `bit_depth() / channels() -> Option<u8>`
+- rusqlite 0.40.2: `Connection::open(path) / open_in_memory()`, `execute_batch`, `execute(sql, params![..])`, `query_row`, `prepare` + `query_map`, `transaction()`, `pragma_update(None, "journal_mode", "WAL")`, `OptionalExtension::optional()`
+- notify 8.2.0: `notify::recommended_watcher(tx)`（`std::sync::mpsc::Sender<notify::Result<Event>>` が EventHandler）, `watcher.watch(&path, RecursiveMode::Recursive)`, `Event { kind, paths }`
+
+### Task 5.1 タグ付きテスト音源
+- ファイル: `scripts/gen-test-audio.sh`
+- 追記: `testdata/lib/` 以下に次を生成（`_src_44k16.wav` から、各 1 秒に trim してよい）
+  - `testdata/lib/AlbumA/01.flac`: sox で `--add-comment` により TITLE=一曲目, ARTIST=テスト歌手, ALBUMARTIST=テスト歌手, ALBUM=テストアルバム, TRACKNUMBER=1, DISCNUMBER=1, DATE=2024, GENRE=Rock
+  - `testdata/lib/AlbumA/02.mp3`: lame `--tt 二曲目 --ta テスト歌手 --tl テストアルバム --tn 2 --ty 2024 --tg Rock --id3v2-only`（Album Artist は無し → Artist で代用される想定）
+  - `testdata/lib/AlbumB/track.ogg`: sox `--add-comment` で TITLE=Ogg Song, ARTIST=Other, ALBUM=Album B, TRACKNUMBER=3
+  - `testdata/lib/notag.flac`: タグ無し
+  - `testdata/lib/broken.mp3`: `printf 'not audio' >` で作る壊れたファイル
+  - `testdata/lib/readme.txt`: 対象外拡張子
+  - `testdata/long_60s.flac`: 60 秒・440Hz・gain -12（手動テスト用）
+- 完了条件: 生成物が揃う（`.gitignore` 済みの拡張子。`readme.txt` は testdata/ ごと ignore されていなければ `.gitignore` に `testdata/lib/readme.txt` を追加）
+
+### Task 5.2 タグ読み取り
+- ファイル: `core/Cargo.toml`（依存追加）, `core/src/library/mod.rs`, `core/src/library/error.rs`, `core/src/library/tags.rs`（+ `lib.rs` に `pub mod library;`）, `core/tests/tags.rs`
+- 型:
+  ```rust
+  #[derive(Debug, thiserror::Error)]
+  pub enum LibraryError { #[error(transparent)] Db(#[from] rusqlite::Error), #[error(transparent)] Io(#[from] std::io::Error),
+      #[error("tag: {0}")] Tag(String), #[error("watch: {0}")] Watch(String) }
+  #[derive(Debug, Clone, Default, PartialEq)]
+  pub struct TrackMeta { pub title: String, pub artist: String, pub album: String, pub album_artist: String, pub genre: String,
+      pub track_no: Option<u32>, pub disc_no: Option<u32>, pub year: Option<u32>,
+      pub duration_ms: u64, pub sample_rate: Option<u32>, pub bit_depth: Option<u8>, pub channels: Option<u8>, pub bitrate_kbps: Option<u32> }
+  impl TrackMeta { /// album_artist が空なら artist
+      pub fn effective_album_artist(&self) -> &str; }
+  pub fn read_meta(path: &Path) -> Result<TrackMeta, LibraryError>;
+  ```
+  - lofty が読めない → `Err(LibraryError::Tag(..))`。タグが無いだけなら Ok で title = ファイル名（拡張子なし）
+- 完了条件: テスト — AlbumA/01.flac の全項目（日本語含む）、02.mp3 の album_artist が空で effective が「テスト歌手」、notag.flac の title が "notag"、broken.mp3 が Err（panic しない）、duration_ms が 1000±50
+
+### Task 5.3 DB
+- ファイル: `core/src/library/db.rs`（テストはファイル内 `#[cfg(test)]` で `open_in_memory`）
+- スキーマ（`PRAGMA user_version = 1`）:
+  - `folders(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE)`
+  - `tracks(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE, mtime_ns INTEGER NOT NULL, size INTEGER NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, album_artist TEXT NOT NULL, album_key TEXT NOT NULL, genre TEXT NOT NULL, track_no INTEGER, disc_no INTEGER, year INTEGER, duration_ms INTEGER NOT NULL, sample_rate INTEGER, bit_depth INTEGER, channels INTEGER, bitrate_kbps INTEGER)`
+  - インデックス: `tracks(folder_id)`, `tracks(album_key, disc_no, track_no)`, `tracks(artist)`, `tracks(title)`, `tracks(genre)`
+  - `album_key = effective_album_artist + "\u{1f}" + album`
+- 型:
+  ```rust
+  pub struct Library { conn: rusqlite::Connection }
+  #[derive(Debug, Clone, Copy, PartialEq, Eq)] pub struct FileState { pub mtime_ns: i64, pub size: i64 }
+  impl Library {
+      pub fn open(path: &Path) -> Result<Self, LibraryError>;   // WAL, foreign_keys=ON, スキーマ作成
+      pub fn open_in_memory() -> Result<Self, LibraryError>;
+      pub fn add_folder(&self, path: &Path) -> Result<i64, LibraryError>;   // 既存なら既存 id
+      pub fn remove_folder(&self, path: &Path) -> Result<(), LibraryError>; // 配下の tracks も消える
+      pub fn folders(&self) -> Result<Vec<(i64, PathBuf)>, LibraryError>;
+      pub fn file_states(&self, folder_id: i64) -> Result<HashMap<PathBuf, FileState>, LibraryError>;
+      pub fn upsert_track(&self, folder_id: i64, path: &Path, state: FileState, meta: &TrackMeta) -> Result<(), LibraryError>;
+      pub fn remove_track(&self, path: &Path) -> Result<(), LibraryError>;
+      pub fn track_count(&self) -> Result<u64, LibraryError>;
+      pub fn transaction<T>(&mut self, f: impl FnOnce(&Library) -> Result<T, LibraryError>) -> Result<T, LibraryError>; // BEGIN..COMMIT、Err なら ROLLBACK
+  }
+  ```
+- 完了条件: テスト — フォルダ追加の冪等性、upsert 2 回で行数 1・内容更新、file_states の往復、remove_folder で曲も消える、同じ DB ファイルを開き直してもスキーマ作成が失敗しない（tempfile 使用）
+
+### Task 5.4 差分スキャン
+- ファイル: `core/src/library/scan.rs`, `core/tests/scan.rs`
+- 型:
+  ```rust
+  #[derive(Debug, Default, Clone, PartialEq, Eq)]
+  pub struct ScanStats { pub added: u32, pub updated: u32, pub removed: u32, pub unchanged: u32, pub errors: u32, pub folder_missing: bool }
+  pub fn is_audio_path(path: &Path) -> bool;
+  /// folder を走査して DB を差分更新。1 トランザクション
+  pub fn scan_folder(lib: &mut Library, folder: &Path) -> Result<ScanStats, LibraryError>;
+  ```
+  - folder が存在しない/ディレクトリでない → DB に触らず `folder_missing: true`
+  - タグ読み取り失敗のファイル: `errors += 1`、DB には入れない（既存行があれば残す）
+  - 走査中に見つからなかった既存行は削除（`removed`）
+- 完了条件: テスト（testdata/lib を tempdir にコピーして使う）— 初回 added=4・errors=1（broken.mp3）、2 回目 unchanged=4・added=0、1 ファイルを書き換え（内容を別ファイルで上書き）→ updated=1、1 ファイル削除 → removed=1、存在しないフォルダ → folder_missing かつ曲数不変
+
+### Task 5.5 バックグラウンドスキャナ
+- ファイル: `core/src/library/scanner.rs`, `core/tests/scanner.rs`
+- 型:
+  ```rust
+  pub enum ScanEvent { Started { folder: PathBuf }, Finished { folder: PathBuf, stats: ScanStats }, Failed { folder: PathBuf, error: String }, AllDone }
+  pub struct ScanHandle { pub events: Receiver<ScanEvent>, join: JoinHandle<()> }
+  impl ScanHandle { pub fn wait(self); }
+  /// db_path を別スレッドで開き、Library の全登録フォルダを順にスキャン
+  pub fn scan_all_in_background(db_path: PathBuf) -> ScanHandle;
+  ```
+- 完了条件: テスト — tempdir の DB にフォルダ登録 → `scan_all_in_background` → AllDone まで受信、Finished の stats が期待どおり、別 Connection から track_count が 4
+
+### Task 5.6 フォルダ監視
+- ファイル: `core/src/library/watch.rs`, `core/tests/watch.rs`
+- 型:
+  ```rust
+  pub struct LibraryWatcher { .. }   // notify watcher と処理スレッドを保持。Drop で停止
+  impl LibraryWatcher {
+      /// 登録フォルダを監視し、変化があったフォルダを「最後のイベントから debounce 経過後」に scan_folder。
+      /// 結果は ScanEvent で送る。存在しないフォルダは監視登録をスキップ（落ちない）
+      pub fn start(db_path: PathBuf, debounce: Duration) -> Result<(Self, Receiver<ScanEvent>), LibraryError>;
+  }
+  ```
+- 完了条件: テスト — tempdir にフォルダ登録・初回スキャン後、watcher を debounce 300ms で開始し、新しい flac をコピー → 10 秒以内に Finished（added=1）を受信
+
+### Task 5.7 CLI サンプル
+- ファイル: `core/examples/lib.rs`
+- 内容: `lib <db> add <folder>` / `lib <db> scan`（バックグラウンドスキャンの進捗を表示）/ `lib <db> stats`（フォルダ一覧と曲数）/ `lib <db> watch`（Ctrl+C まで監視し、結果を表示）
+- 完了条件: testdata/lib で add → scan → stats が期待どおり
