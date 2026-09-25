@@ -20,3 +20,6 @@
 *.ogg
 *.oga
 *.opus
+
+# Generated test data
+/testdata/

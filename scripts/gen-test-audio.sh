@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+export LC_ALL=en_US.UTF-8
 
 export PATH="/opt/homebrew/bin:$PATH"
 
@@ -40,3 +41,15 @@ sox testdata/_gap_b.wav testdata/gap_b.ogg
 
 echo "Test audio generation completed successfully."
 ls -la testdata
+
+# --- Task 5.1: Tagged test audio sources ---
+mkdir -p testdata/lib/AlbumA testdata/lib/AlbumB
+rm -f testdata/lib/AlbumA/02.mp3
+sox testdata/_src_44k16.wav --add-comment "TITLE=一曲目" --add-comment "ARTIST=テスト歌手" --add-comment "ALBUMARTIST=テスト歌手" --add-comment "ALBUM=テストアルバム" --add-comment "TRACKNUMBER=1" --add-comment "DISCNUMBER=1" --add-comment "DATE=2024" --add-comment "GENRE=Rock" testdata/lib/AlbumA/01.flac trim 0 1
+sox testdata/_src_44k16.wav testdata/_src_1s.wav trim 0 1
+lame --quiet -b 192 --id3v2-only --tt "二曲目" --ta "テスト歌手" --tl "テストアルバム" --tn 2 --ty 2024 --tg Rock testdata/_src_1s.wav testdata/lib/AlbumA/02.mp3
+sox testdata/_src_44k16.wav --add-comment "TITLE=Ogg Song" --add-comment "ARTIST=Other" --add-comment "ALBUM=Album B" --add-comment "TRACKNUMBER=3" testdata/lib/AlbumB/track.ogg trim 0 1
+sox testdata/_src_44k16.wav testdata/lib/notag.flac trim 0 1
+printf 'not audio' > testdata/lib/broken.mp3
+printf 'readme' > testdata/lib/readme.txt
+sox -n -r 44100 -b 16 -c 2 testdata/long_60s.flac synth 60 sine 440 gain -12
