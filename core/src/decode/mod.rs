@@ -2,6 +2,7 @@ use std::path::Path;
 use crate::coreaudio::error::CoreAudioError;
 pub use crate::coreaudio::ext_audio_file::StreamInfo;
 
+pub mod vorbis;
 pub mod ext;
 
 /// 音声ファイルをデコードするためのトレイト
@@ -36,9 +37,7 @@ pub fn open(path: &Path) -> Result<Box<dyn Decoder>, DecodeError> {
         .unwrap_or_default();
 
     match ext.as_str() {
-        "ogg" | "oga" => Err(DecodeError::Unsupported(
-            "ogg vorbis decoder not implemented yet".into(),
-        )),
+        "ogg" | "oga" => Ok(Box::new(vorbis::VorbisDecoder::open(path)?)),
         _ => Ok(Box::new(ext::ExtDecoder::open(path)?)),
     }
 }

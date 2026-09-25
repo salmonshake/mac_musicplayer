@@ -14,3 +14,4 @@ objc2-audio-toolbox = { version = "0.3.2", default-features = false, features = 
 objc2-core-foundation = "0.3.2"
 rtrb = "0.4.0"
 thiserror = "2.0.21"
+symphonia = { version = "0.6.1", default-features = false, features = ["ogg", "vorbis"] }
