@@ -158,3 +158,84 @@
   - `output.rs` のすべての `unsafe` ブロックの直前に `// SAFETY:` コメントを付ける
   - テスト: `OutputUnit::new` が Err なら eprintln して return（出力デバイスの無い環境で失敗させない）。テスト内の余分な `mod tests` ラッパーを外す
 - 完了条件: `cargo test -p mmp-core` と `cargo clippy -p mmp-core --all-targets -- -D warnings` が成功し、`output.rs` の `unsafe` がすべて `// SAFETY:` 付き
+
+---
+
+## 段階2: 対応フォーマット拡充
+
+方針:
+- FLAC / ALAC / MP3 / AAC / HE-AAC / WAV / AIFF は ExtAudioFile で読む（AudioToolbox が対応済み）
+- Ogg Vorbis だけ symphonia で読む
+- 両者を `Decoder` トレイトで抽象化し、`playback` は拡張子に応じた `decode::open()` を使う
+- ギャップレス（priming/padding の除去）は段階3。段階2では長さの厳密一致は求めない
+
+### 依存の追加（段階2、確認済み 2026-09-25）
+| crate | version | features |
+|---|---|---|
+| objc2-audio-toolbox | 0.3.2 | 既存 features に `AudioFile` を追加 |
+| symphonia | 0.6.1 | default-features = false, `ogg`, `vorbis` |
+
+参照した API:
+- HE-AAC: `ExtAudioFileGetProperty(kExtAudioFileProperty_AudioFile)` で `AudioFileID`（`*mut OpaqueAudioFileID`）を取得 →
+  `AudioFileGetPropertyInfo(id, kAudioFilePropertyFormatList, *mut u32 size, *mut u32 writable)` →
+  `AudioFileGetProperty(id, kAudioFilePropertyFormatList, NonNull<u32>, NonNull<c_void>)` で `[AudioFormatListItem]`（`mASBD`, `mChannelLayoutTag`）。
+  先頭要素が再生すべき最高品質の形式（afinfo で確認: HE-AAC は `[0] 44100Hz aach`, `[1] 22050Hz aac`）。
+  FileDataFormat は基本層の 22050Hz を返すので、そのまま使うと SBR が失われる
+- symphonia 0.6.1（examples/basic-interleaved.rs を正とする）:
+  `MediaSourceStream::new(Box::new(File), Default::default())`,
+  `symphonia::default::get_probe().probe(&Hint, mss, FormatOptions, MetadataOptions) -> Result<Box<dyn FormatReader>>`,
+  `format.default_track(TrackType::Audio) -> Option<&Track>`, `track.codec_params.as_ref()?.audio()?`（`AudioCodecParameters { sample_rate: Option<u32>, channels: Option<Channels>, .. }`, `Channels::count()`），
+  `symphonia::default::get_codecs().make_audio_decoder(params, &AudioDecoderOptions) -> Result<Box<dyn AudioDecoder>>`,
+  `format.next_packet() -> Result<Option<Packet>>`, `decoder.decode(&packet) -> Result<GenericAudioBufferRef>`,
+  `buf.samples_interleaved()`, `buf.copy_to_slice_interleaved(&mut [f32])`,
+  `symphonia::core::errors::Error::{IoError, DecodeError, SeekError, Unsupported, LimitError, ResetRequired}`
+
+### Task 2.1 テスト音源の追加
+- ファイル: `scripts/gen-test-audio.sh`
+- 内容: 既存 2 ファイルに加え、sox で `testdata/_src_44k16.wav`（440Hz, 44100Hz, 16bit, 2ch, 3.0 秒, gain -6）を作り、そこから以下を生成
+  - `sine440_44k16.wav`（sox でコピー）, `sine440_44k16.aiff`（sox）, `sine440.mp3`（sox）, `sine440.ogg`（sox, Vorbis）
+  - `sine440_alac.m4a`: `afconvert -f m4af -d alac`
+  - `sine440_aac.m4a`: `afconvert -f m4af -d aac -b 192000`
+  - `sine440_heaac.m4a`: `afconvert -f m4af -d aach -b 64000`
+- 完了条件: スクリプト実行後、上記 7 ファイルが存在し、`afinfo` で 2ch・約 3 秒（HE-AAC の Data format は 22050Hz 表示でよい）
+
+### Task 2.2 HE-AAC の正しいサンプルレート
+- ファイル: `core/Cargo.toml`（features に `AudioFile`）, `core/src/coreaudio/ext_audio_file.rs`, `core/tests/ext_audio_file.rs`
+- 内容: `file_info()` を「フォーマットリストの先頭要素の `mASBD` を使い、取得できない・空なら従来どおり FileDataFormat」に変更
+- 完了条件: テスト追加 — `sine440_heaac.m4a` の `file_info().sample_rate == 44100.0`、`sine440_aac.m4a` と既存 FLAC も 44100。全テスト・clippy 成功
+
+### Task 2.3 Decoder トレイトと ExtAudioFile 実装
+- ファイル: `core/src/decode/mod.rs`, `core/src/decode/ext.rs`（+ `lib.rs` に `pub mod decode;`）
+- 型:
+  ```rust
+  pub trait Decoder: Send {
+      fn info(&self) -> StreamInfo;
+      /// f32 インターリーブで最大 buf.len()/channels フレーム。戻り値はフレーム数、0 = EOF
+      fn read(&mut self, buf: &mut [f32]) -> Result<usize, DecodeError>;
+  }
+  #[derive(Debug, thiserror::Error)]
+  pub enum DecodeError {
+      #[error(transparent)] CoreAudio(#[from] CoreAudioError),
+      #[error("io: {0}")] Io(#[from] std::io::Error),
+      #[error("decode: {0}")] Codec(String),
+      #[error("no audio track")] NoAudioTrack,
+      #[error("unsupported: {0}")] Unsupported(String),
+  }
+  /// 拡張子（小文字化）で振り分け。"ogg" | "oga" は段階2.4 まで Unsupported、それ以外は ExtDecoder
+  pub fn open(path: &Path) -> Result<Box<dyn Decoder>, DecodeError>;
+  ```
+  - `ExtDecoder { file: ExtAudioFile, info: StreamInfo }`: open 時に `file_info` → `set_client_f32_interleaved`
+- 完了条件: build・clippy・既存テスト成功
+
+### Task 2.4 Ogg Vorbis デコーダ（symphonia）
+- ファイル: `core/Cargo.toml`（symphonia 追加）, `core/src/decode/vorbis.rs`（+ `decode/mod.rs` の振り分け）
+- 型: `VorbisDecoder { format: Box<dyn FormatReader>, decoder: Box<dyn AudioDecoder>, track_id: u32, info: StreamInfo, pending: Vec<f32>, pending_pos: usize }`
+- read: `pending` の残りを先に buf へコピー。空なら `next_packet` → `None` は EOF(0)、他トラックはスキップ、`decode` → `pending.resize(samples_interleaved, 0.0)` → `copy_to_slice_interleaved`。`Error::DecodeError` はそのパケットをスキップ、その他のエラーは `DecodeError::Codec(e.to_string())`
+- `sample_rate` / `channels` が取れなければ `Unsupported`
+- 完了条件: build・clippy・既存テスト成功
+
+### Task 2.5 再生を Decoder 経由に切り替え + 全フォーマットテスト
+- ファイル: `core/src/playback.rs`, `core/tests/formats.rs`
+- 内容: `play_file_blocking` を `decode::open` 経由に変更（`PlaybackError` に `Decode(#[from] DecodeError)` 追加）
+- テスト: 段階1・2 の全テスト音源（FLAC 2, WAV, AIFF, MP3, Ogg, ALAC, AAC, HE-AAC）を `decode::open` で開き、2ch・期待レート、read 合計フレームが 期待値 ±3000 フレーム（MP3/AAC の priming 分の誤差を許容。厳密化は段階3）。テスト音源が無ければ skip
+- 完了条件: 全テスト・clippy 成功。`play` サンプルで ogg と heaac が約 3 秒で exit 0
