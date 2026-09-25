@@ -150,3 +150,11 @@
 - ファイル: `core/examples/play.rs`
 - 内容: `cargo run -p mmp-core --example play -- <path>`。引数不足は使い方を表示して exit 2、エラーは stderr に表示して exit 1
 - 完了条件: `cargo run -p mmp-core --example play -- testdata/sine440_44k16_stereo.flac` が約 3 秒で exit 0（音が鳴るかは指揮役/ユーザーが耳で確認）。存在しないパスで exit 1
+
+### Task 1.5a 後片付け（1.5 レビュー指摘）
+- ファイル: `core/src/coreaudio/output.rs`, `core/tests/output_unit.rs`
+- 内容:
+  - `RenderState` と `consumer` フィールドを非公開にする
+  - `output.rs` のすべての `unsafe` ブロックの直前に `// SAFETY:` コメントを付ける
+  - テスト: `OutputUnit::new` が Err なら eprintln して return（出力デバイスの無い環境で失敗させない）。テスト内の余分な `mod tests` ラッパーを外す
+- 完了条件: `cargo test -p mmp-core` と `cargo clippy -p mmp-core --all-targets -- -D warnings` が成功し、`output.rs` の `unsafe` がすべて `// SAFETY:` 付き
