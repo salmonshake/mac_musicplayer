@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);
 
 /// Handle to the library database.
 pub struct Library {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
 /// Immutable file state for change detection.
