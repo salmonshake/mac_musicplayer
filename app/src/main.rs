@@ -1,5 +1,6 @@
 mod fonts;
 mod state;
+mod ui;
 
 use eframe::egui;
 use std::path::PathBuf;
@@ -17,6 +18,9 @@ impl eframe::App for MmpApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Ok(s) = &mut self.state {
+            ui::sidebar::show(ui, s);
+        }
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("MacMusicPlay");
             ui.label("日本語表示テスト：一曲目 / テスト歌手");
