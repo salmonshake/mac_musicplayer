@@ -4,13 +4,15 @@ use objc2_audio_toolbox::{
     AudioComponentDescription, AudioComponentFindNext, AudioComponentInstanceNew, AudioComponentInstanceDispose,
     AudioUnit, AudioUnitInitialize, AudioUnitUninitialize, AudioUnitSetProperty, AudioOutputUnitStart,
     AudioOutputUnitStop, AURenderCallbackStruct, AudioUnitRenderActionFlags, kAudioUnitType_Output,
-    kAudioUnitSubType_DefaultOutput, kAudioUnitManufacturer_Apple, kAudioUnitProperty_StreamFormat,
-    kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input,
+    kAudioUnitSubType_DefaultOutput, kAudioUnitSubType_HALOutput, kAudioUnitManufacturer_Apple,
+    kAudioUnitProperty_StreamFormat, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input,
+    kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
 };
 use objc2_core_audio_types::{
     AudioBufferList, AudioTimeStamp, kAudioFormatFlagsNativeFloatPacked, kAudioFormatLinearPCM,
     AudioStreamBasicDescription,
 };
+use crate::coreaudio::device::DeviceId;
 use crate::coreaudio::error::{check, CoreAudioError, Result};
 use crate::coreaudio::ext_audio_file::StreamInfo;
 use rtrb::Consumer;
@@ -25,12 +27,23 @@ pub struct OutputUnit {
 }
 
 impl OutputUnit {
-    /// DefaultOutput を作成し、入力スコープ element 0 に f32 インターリーブ形式を設定、
-    /// レンダーコールbackを登録して Initialize する（Start はしない）
-    pub fn new(info: &StreamInfo, consumer: Consumer<f32>) -> Result<Self> {
+    /// システムのデフォルト出力デバイスに追従する OutputUnit を作成するか、
+    /// 明示的なデバイス ID が指定された場合はそのデバイスに固定して作成する。
+    ///
+    /// `device` が `None` の場合は `kAudioUnitSubType_DefaultOutput` を使用し、
+    /// システムのデフォルト出力デバイスに追従する。
+    /// `device` が `Some(id)` の場合は `kAudioUnitSubType_HALOutput` を使用し、
+    /// 指定されたデバイスに固定する。
+    ///
+    /// レンダーコールバックを登録して Initialize する（Start はしない）。
+    pub fn new(info: &StreamInfo, consumer: Consumer<f32>, device: Option<DeviceId>) -> Result<Self> {
         let mut desc = AudioComponentDescription {
             componentType: kAudioUnitType_Output,
-            componentSubType: kAudioUnitSubType_DefaultOutput,
+            componentSubType: if device.is_some() {
+                kAudioUnitSubType_HALOutput
+            } else {
+                kAudioUnitSubType_DefaultOutput
+            },
             componentManufacturer: kAudioUnitManufacturer_Apple,
             componentFlags: 0,
             componentFlagsMask: 0,
@@ -42,7 +55,9 @@ impl OutputUnit {
         };
 
         if comp.is_null() {
-            return Err(CoreAudioError::ComponentNotFound("DefaultOutput"));
+            return Err(CoreAudioError::ComponentNotFound(
+                if device.is_some() { "HALOutput" } else { "DefaultOutput" },
+            ));
         }
 
         let mut unit = std::ptr::null_mut();
@@ -52,6 +67,28 @@ impl OutputUnit {
                 AudioComponentInstanceNew(comp, NonNull::from(&mut unit)),
                 "AudioComponentInstanceNew",
             )?;
+        }
+
+        // SAFETY: If a device ID is provided, we bind the output unit to that device.
+        // DeviceId (AudioObjectID) is a u32 that identifies a Core Audio device.
+        // The pointer remains valid for the duration of this call, and the unit
+        // takes ownership of the device reference.
+        if let Some(id) = device {
+            let status = unsafe {
+                AudioUnitSetProperty(
+                    unit,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global,
+                    0,
+                    (&id as *const DeviceId).cast::<c_void>(),
+                    std::mem::size_of::<DeviceId>() as u32,
+                )
+            };
+            if let Err(e) = check(status, "AudioUnitSetProperty (CurrentDevice)") {
+                // SAFETY: unit is a valid AudioUnit that was just created.
+                unsafe { AudioComponentInstanceDispose(unit) };
+                return Err(e);
+            }
         }
 
         let state = Box::into_raw(Box::new(RenderState { consumer }));

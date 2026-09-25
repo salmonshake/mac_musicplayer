@@ -34,7 +34,7 @@ struct Output {
 fn open_output(info: &StreamInfo) -> Result<Output, PlaybackError> {
     let capacity = ((info.sample_rate * info.channels as f64 * 0.5) as usize).max(4096);
     let (producer, consumer) = RingBuffer::<f32>::new(capacity);
-    let mut unit = OutputUnit::new(info, consumer)?;
+    let mut unit = OutputUnit::new(info, consumer, None)?;
     unit.start()?;
     Ok(Output {
         unit,
