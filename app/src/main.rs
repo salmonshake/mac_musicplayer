@@ -22,25 +22,31 @@ impl eframe::App for MmpApp {
             ui::sidebar::show(ui, s);
         }
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("MacMusicPlay");
-            ui.label("日本語表示テスト：一曲目 / テスト歌手");
-            ui.label(match &self.font {
-                Some(p) => format!("font: {}", p.display()),
-                None => "CJK font not found".to_owned(),
-            });
-            match &self.state {
-                Ok(app_state) => {
-                    ui.label(format!(
-                        "status: {} (scanning: {})",
-                        app_state.status,
-                        app_state.scanning
-                    ));
-                    ui.label(format!(
-                        "tracks: {}  folders: {}",
-                        app_state.tracks.len(),
-                        app_state.folders.len()
-                    ));
-                }
+            match &mut self.state {
+                Ok(s) => match s.nav {
+                    state::Nav::AllTracks
+                    | state::Nav::Artist(_)
+                    | state::Nav::Genre(_) => {
+                        ui::tracks::show(ui, s);
+                    }
+                    _ => {
+                        ui.heading("MacMusicPlay");
+                        ui.label(match &self.font {
+                            Some(p) => format!("font: {}", p.display()),
+                            None => "CJK font not found".to_owned(),
+                        });
+                        ui.label(format!(
+                            "status: {} (scanning: {})",
+                            s.status,
+                            s.scanning
+                        ));
+                        ui.label(format!(
+                            "tracks: {}  folders: {}",
+                            s.tracks.len(),
+                            s.folders.len()
+                        ));
+                    }
+                },
                 Err(e) => {
                     ui.label(format!("Error: {e}"));
                 }
