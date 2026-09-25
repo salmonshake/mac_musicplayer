@@ -218,6 +218,18 @@ impl Library {
         Ok(())
     }
 
+    /// Force a WAL checkpoint so that all committed changes are visible to
+    /// subsequent connections.
+    ///
+    /// This is useful in tests where multiple connections need to see the
+    /// same data.
+    pub fn checkpoint(&mut self) -> Result<(), LibraryError> {
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(PASSIVE)")
+            .map_err(LibraryError::Db)?;
+        Ok(())
+    }
+
     /// Total number of tracks in the database.
     pub fn track_count(&self) -> Result<u64, LibraryError> {
         let count: i64 = self
