@@ -1,4 +1,4 @@
-# Project: (名前未定) — Lightweight macOS Music Player
+# Project: MacMusicPlay（仮称） — Lightweight macOS Music Player
 
 GUI イメージ: [gui-mockup.webp](gui-mockup.webp)
 
@@ -36,7 +36,7 @@ GUI イメージ: [gui-mockup.webp](gui-mockup.webp)
 ## データ方針
 - ファイルのタグを正とし、DB はキャッシュ
 - プレイリストは DB キャッシュとは別に永続化する（再スキャン・DB 削除で消えないこと）
-- 保存先: ~/Library/Application Support/<アプリ名>/
+- 保存先: ~/Library/Application Support/MacMusicPlay/
 
 ## 絶対ルール
 - オーディオコールバック内でロック・アロケーション・I/O・ログ出力をしない
