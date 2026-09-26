@@ -14,3 +14,7 @@
   失敗（またはターン上限）なら自動で Opus（~/bin/ask-opus）に助言を求めて 1 回だけ再試行する。
   出力の最終行 `local-worker: RESULT=ok|failed escalated=yes|no` を必ず確認する（ok でもレビューは省略しない）。
   「2回失敗」の数え方: RESULT=failed を 1 回の失敗とする
+
+## 言語
+- ユーザーへの返答・報告は日本語で書く
+- アプリの UI 文言は英語（docs/gui-mockup.webp に合わせる）。コードのコメントは日本語でも英語でもよい

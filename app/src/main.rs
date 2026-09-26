@@ -1,4 +1,5 @@
 mod fonts;
+mod screenshot;
 mod style;
 mod state;
 mod ui;
@@ -7,12 +8,26 @@ use eframe::egui;
 
 struct MmpApp {
     state: Result<state::AppState, String>,
+    shot: Option<screenshot::Screenshotter>,
+    pending_album: bool,
 }
 
 impl eframe::App for MmpApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Ok(app_state) = &mut self.state {
             app_state.poll(ctx);
+        }
+        if let (Some(shot), Ok(s)) = (&mut self.shot, &mut self.state) {
+            if self.pending_album && !s.scanning {
+                self.pending_album = false;
+                if s.nav != state::Nav::Albums {
+                    s.set_nav(state::Nav::Albums);
+                }
+                if let Some(k) = s.albums.first().map(|a| a.album_key.clone()) {
+                    s.set_nav(state::Nav::Album(k));
+                }
+            }
+            shot.tick(ctx, s.scanning);
         }
     }
 
@@ -74,8 +89,29 @@ fn main() -> eframe::Result {
             if found.is_none() {
                 eprintln!("CJK font not found");
             }
-            let state = state::AppState::open().map_err(|e| e.to_string());
-            Ok(Box::new(MmpApp { state }))
+            let opened = state::AppState::open().map_err(|e| e.to_string());
+            let shot = screenshot::Screenshotter::from_env();
+            let pending_album = shot.is_some()
+                && std::env::var("MMP_NAV")
+                    .map(|v| v == "album")
+                    .unwrap_or(false);
+            let app_state = match opened {
+                Ok(mut s) => {
+                    match std::env::var("MMP_NAV").as_deref() {
+                        Ok("albums") => s.set_nav(state::Nav::Albums),
+                        Ok("artists") => s.set_nav(state::Nav::Artists),
+                        Ok("genres") => s.set_nav(state::Nav::Genres),
+                        _ => {}
+                    }
+                    Ok(s)
+                }
+                Err(e) => Err(e),
+            };
+            Ok(Box::new(MmpApp {
+                state: app_state,
+                shot,
+                pending_album,
+            }))
         }),
     )
 }
