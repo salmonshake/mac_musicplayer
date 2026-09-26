@@ -636,3 +636,10 @@
 - 余白: 行高 `ROW_HEIGHT`、ヘッダー `HEADER_HEIGHT`、ヘッダー文字は weak 色、`#` と `Length` は右寄せ。中央パネル内側余白 16。アルバム詳細の見出しブロックは上下 16、見出し 26pt・アーティスト 16pt
 - `tracks::show(ui, state, show_album_column: bool)` に変更し、アルバム詳細では Album 列を隠す（モックどおり）
 - 完了条件: build・clippy・test 成功、6.10 と同じ grep が 0 件
+
+### Task 6.12 開発用スクリーンショット（リモート確認用）
+- ファイル: `app/src/screenshot.rs`（新規）, `app/src/main.rs`
+- 内容: 環境変数 `MMP_SCREENSHOT=<出力 .png パス>` があるときだけ有効。`MMP_NAV=all|albums|album|artists|genres`（album は albums の先頭を開く）で初期画面を選ぶ。
+  スキャンが終わってから（最大 600 フレーム待つ）30 フレーム後に `ctx.send_viewport_cmd(ViewportCommand::Screenshot(Default::default()))`、
+  `Event::Screenshot { image, .. }` を受けたら 24bit BMP を書き（依存追加なし）、`sips -s format png <bmp> --out <png>` で変換し、`ViewportCommand::Close` で終了
+- 完了条件: build・clippy・test 成功、`MMP_SCREENSHOT=/tmp/x.png ./target/debug/macmusicplay` で PNG ができて終了する
