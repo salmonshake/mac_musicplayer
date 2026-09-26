@@ -1,4 +1,5 @@
 mod fonts;
+mod style;
 mod state;
 mod ui;
 
@@ -66,6 +67,7 @@ fn main() -> eframe::Result {
         "MacMusicPlay",
         options,
         Box::new(|cc| {
+            style::apply(&cc.egui_ctx);
             let found = fonts::install_cjk_fonts(&cc.egui_ctx);
             if found.is_none() {
                 eprintln!("CJK font not found");
