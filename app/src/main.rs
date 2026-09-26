@@ -6,7 +6,7 @@ use eframe::egui;
 use std::path::PathBuf;
 
 struct MmpApp {
-    font: Option<PathBuf>,
+    _font: Option<PathBuf>,
     state: Result<state::AppState, String>,
 }
 
@@ -23,28 +23,23 @@ impl eframe::App for MmpApp {
         }
         egui::CentralPanel::default().show(ui, |ui| {
             match &mut self.state {
-                Ok(s) => match s.nav {
+                Ok(s) => match s.nav.clone() {
                     state::Nav::AllTracks
                     | state::Nav::Artist(_)
                     | state::Nav::Genre(_) => {
                         ui::tracks::show(ui, s);
                     }
-                    _ => {
-                        ui.heading("MacMusicPlay");
-                        ui.label(match &self.font {
-                            Some(p) => format!("font: {}", p.display()),
-                            None => "CJK font not found".to_owned(),
-                        });
-                        ui.label(format!(
-                            "status: {} (scanning: {})",
-                            s.status,
-                            s.scanning
-                        ));
-                        ui.label(format!(
-                            "tracks: {}  folders: {}",
-                            s.tracks.len(),
-                            s.folders.len()
-                        ));
+                    state::Nav::Albums => {
+                        ui::albums::show_albums(ui, s);
+                    }
+                    state::Nav::Album(k) => {
+                        ui::albums::show_album(ui, s, &k);
+                    }
+                    state::Nav::Artists => {
+                        ui::albums::show_artists(ui, s);
+                    }
+                    state::Nav::Genres => {
+                        ui::albums::show_genres(ui, s);
                     }
                 },
                 Err(e) => {
@@ -69,7 +64,7 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             let font = fonts::install_cjk_fonts(&cc.egui_ctx);
             let state = state::AppState::open().map_err(|e| e.to_string());
-            Ok(Box::new(MmpApp { font, state }))
+            Ok(Box::new(MmpApp { _font: font, state }))
         }),
     )
 }
