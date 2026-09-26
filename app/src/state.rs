@@ -1,6 +1,5 @@
 //! Application state and background scanning / watching.
 // Fields and methods are consumed by the UI in Tasks 6.5+.
-#![allow(dead_code)]
 
 use eframe::egui;
 use mmp_core::library::{

@@ -3,10 +3,8 @@ mod state;
 mod ui;
 
 use eframe::egui;
-use std::path::PathBuf;
 
 struct MmpApp {
-    _font: Option<PathBuf>,
     state: Result<state::AppState, String>,
 }
 
@@ -18,9 +16,15 @@ impl eframe::App for MmpApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Toolbar (top panel)
+        if let Ok(s) = &mut self.state {
+            ui::toolbar::show(ui, s);
+        }
+        // Sidebar (left panel)
         if let Ok(s) = &mut self.state {
             ui::sidebar::show(ui, s);
         }
+        // Central panel
         egui::CentralPanel::default().show(ui, |ui| {
             match &mut self.state {
                 Ok(s) => match s.nav.clone() {
@@ -62,9 +66,12 @@ fn main() -> eframe::Result {
         "MacMusicPlay",
         options,
         Box::new(|cc| {
-            let font = fonts::install_cjk_fonts(&cc.egui_ctx);
+            let found = fonts::install_cjk_fonts(&cc.egui_ctx);
+            if found.is_none() {
+                eprintln!("CJK font not found");
+            }
             let state = state::AppState::open().map_err(|e| e.to_string());
-            Ok(Box::new(MmpApp { _font: font, state }))
+            Ok(Box::new(MmpApp { state }))
         }),
     )
 }

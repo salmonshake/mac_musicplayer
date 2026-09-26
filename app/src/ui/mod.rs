@@ -2,4 +2,5 @@
 
 pub mod albums;
 pub mod sidebar;
+pub mod toolbar;
 pub mod tracks;
