@@ -610,3 +610,29 @@
 - 内容: `Panel::top` に検索欄（プレースホルダ「検索」、⌘F でフォーカス、Esc でクリア）と、右端に曲数/ステータス表示。main の `ui()` で toolbar → sidebar → CentralPanel（nav に応じて tracks/albums/artists）を組み立てる
 - 追加: `app/src/state.rs` 先頭の `#![allow(dead_code)]`（6.4 で一時的に付けたもの）を削除し、未使用の項目があれば使うか削除する
 - 完了条件: build・clippy 成功。testdata/lib を追加した状態で起動し、全曲・アルバム・ジャンル・検索（「テスト」「ogg」）が機能すること（指揮役/ユーザーが確認）
+
+### 段階6 追加調整（ユーザーフィードバック 2026-09-26: 文字に対して余白が足りない / UI は英語 / docs/gui-mockup.webp に寄せる）
+方針:
+- UI 文言はすべて英語。サイドバー項目はモックどおり小文字（`all tracks` / `artists` / `albums` / `genres`）、セクション見出しは大文字（`LIBRARY` / `GENRES` / `FOLDERS`）
+- 余白: 本文 14pt、見出し 26pt、小 11pt。`item_spacing = (10, 8)`、`button_padding = (10, 5)`、`interact_size.y = 26`。表の行高 34、ヘッダー 30。サイドバー幅 230・内側余白 14、項目の高さ 30。中央パネルの内側余白 16〜24
+- プレイヤーバー・PLAYLISTS・アートワーク・テーマ切り替えは各段階（7/8/10/11）でモックに合わせて作る
+- egui 0.36: 全テーマのスタイル変更は `ctx.all_styles_mut(|s: &mut egui::Style| { s.text_styles.insert(TextStyle::Body, FontId::proportional(14.0)); s.spacing.item_spacing = vec2(..); … })`、パネルの余白は `.frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(14.0))` / `egui::Frame::central_panel(..)`（無ければ grep で確認）
+
+### Task 6.9 スタイル（文字サイズ・余白）
+- ファイル: `app/src/style.rs`（新規）, `app/src/main.rs`（`mod style;` と creator で `style::apply(&cc.egui_ctx)` を呼ぶ）
+- 内容: 上記の文字サイズ・spacing を `all_styles_mut` で設定。`pub const ROW_HEIGHT: f32 = 34.0; pub const HEADER_HEIGHT: f32 = 30.0; pub const SIDEBAR_WIDTH: f32 = 230.0; pub const PANEL_MARGIN: f32 = 14.0;` を公開
+- 完了条件: build・clippy 成功
+
+### Task 6.10 サイドバー・ツールバー・状態メッセージの英語化と余白
+- ファイル: `app/src/ui/sidebar.rs`, `app/src/ui/toolbar.rs`, `app/src/state.rs`（status 文言のみ）
+- 文言: `LIBRARY` / `all tracks` / `artists` / `albums` / `genres`、`GENRES`、`FOLDERS`、`Add folder…`、`Remove from library (files are not deleted)`、`Choose a music folder`、`Scanning…`、検索 `Search`、ステータス `{n} tracks` / `{n} albums` / `{n} artists` / `{n} genres`、state の `Scanning: {folder}` / `Could not add folder: {e}` / `Could not remove folder: {e}` / `Load error: {e}` / `Could not start watching: {e}`
+- サイドバー: 幅 `SIDEBAR_WIDTH`（`default_size` 等の名前は grep で確認）、`PANEL_MARGIN` の内側余白。セクション見出しの前に 16 の空き、項目は `selectable_label` を `ui.add_sized([ui.available_width(), 30.0], ..)` で横幅いっぱい・高さ 30。GENRES は `Rock  12` のように件数を weak 色で
+- ツールバー: 上下 8・左右 16 の余白、検索欄の幅 320
+- 完了条件: build・clippy・test 成功、`grep -rn '[ぁ-んァ-ン一-龥]' app/src/ui app/src/state.rs` がコメント以外で 0 件
+
+### Task 6.11 曲一覧・アルバム画面の英語化と余白
+- ファイル: `app/src/ui/tracks.rs`, `app/src/ui/albums.rs`
+- 文言: 列 `#` / `Title` / `Length` / `Artist` / `Album` / `Genres` / `Bitrate/Format`、アルバム一覧 `Album` / `Artist` / `Year` / `Tracks` / `Length`、アーティスト `Artist` / `Tracks`、ジャンル `Genre` / `Tracks`、空表示 `No tracks yet. Add a music folder from the sidebar.` / `No albums` / `No artists` / `No genres`、戻る `← Albums`、アルバム見出し下 `{year} • {n} tracks • {m:ss or h:mm:ss}`
+- 余白: 行高 `ROW_HEIGHT`、ヘッダー `HEADER_HEIGHT`、ヘッダー文字は weak 色、`#` と `Length` は右寄せ。中央パネル内側余白 16。アルバム詳細の見出しブロックは上下 16、見出し 26pt・アーティスト 16pt
+- `tracks::show(ui, state, show_album_column: bool)` に変更し、アルバム詳細では Album 列を隠す（モックどおり）
+- 完了条件: build・clippy・test 成功、6.10 と同じ grep が 0 件
