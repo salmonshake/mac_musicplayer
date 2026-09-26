@@ -4,17 +4,30 @@ use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 
 use crate::state::{AppState, Nav};
+use crate::style::{HEADER_HEIGHT, ROW_HEIGHT};
 use crate::ui::tracks::format_duration;
+
+/// Format total milliseconds as `h:mm:ss` (hours shown when > 0).
+pub fn format_album_duration(ms: u64) -> String {
+    let total_s = ms / 1000;
+    let h = total_s / 3600;
+    let m = (total_s % 3600) / 60;
+    let s = total_s % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
 
 /// Show the album list grid.
 pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
     if state.albums.is_empty() {
         ui.centered_and_justified(|ui| {
-            ui.label("アルバムがありません");
+            ui.label("No albums found.");
         });
         return;
     }
-    let row_h = 22.0;
     let albums = &state.albums;
     let mut clicked: Option<String> = None;
     TableBuilder::new(ui)
@@ -25,15 +38,15 @@ pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
         .column(Column::exact(56.0))
         .column(Column::exact(56.0))
         .column(Column::remainder())
-        .header(24.0, |mut h| {
-            for t in ["アルバム", "アーティスト", "年", "曲数", "長さ"] {
+        .header(HEADER_HEIGHT, |mut h| {
+            for t in ["Album", "Artist", "Year", "Tracks", "Length"] {
                 h.col(|ui| {
-                    ui.strong(t);
+                    ui.label(egui::RichText::new(t).weak());
                 });
             }
         })
         .body(|body| {
-            body.rows(row_h, albums.len(), |mut row| {
+            body.rows(ROW_HEIGHT, albums.len(), |mut row| {
                 let i = row.index();
                 let a = match albums.get(i) {
                     Some(a) => a,
@@ -68,7 +81,7 @@ pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
 pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
     let Some(first) = state.tracks.first() else {
         ui.centered_and_justified(|ui| {
-            ui.label("曲がありません");
+            ui.label("No tracks in this album.");
         });
         return;
     };
@@ -84,16 +97,19 @@ pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
     if let Some(y) = first.year {
         parts.push(y.to_string());
     }
-    parts.push(format!("{} 曲", state.tracks.len()));
+    parts.push(format!("{} tracks", state.tracks.len()));
     let total_ms: u64 = state.tracks.iter().map(|t| t.duration_ms).sum();
-    parts.push(format_duration(total_ms));
+    parts.push(format_album_duration(total_ms));
 
-    let back = ui.button("← アルバム一覧").clicked();
-    ui.heading(album);
-    ui.label(artist);
+    let back = ui.button("← Albums").clicked();
+    ui.add_space(16.0);
+    ui.label(egui::RichText::new(&album).size(26.0).strong());
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(&artist).size(16.0));
+    ui.add_space(4.0);
     ui.label(egui::RichText::new(parts.join(" • ")).weak());
     ui.add_space(8.0);
-    crate::ui::tracks::show(ui, state);
+    crate::ui::tracks::show(ui, state, false);
     if back {
         state.set_nav(Nav::Albums);
     }
@@ -103,11 +119,10 @@ pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
 pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
     if state.artists.is_empty() {
         ui.centered_and_justified(|ui| {
-            ui.label("アーティストがありません");
+            ui.label("No artists found.");
         });
         return;
     }
-    let row_h = 22.0;
     let artists = &state.artists;
     let mut clicked: Option<String> = None;
     TableBuilder::new(ui)
@@ -115,15 +130,15 @@ pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
         .sense(egui::Sense::click())
         .column(Column::initial(320.0).resizable(true).clip(true))
         .column(Column::remainder())
-        .header(24.0, |mut h| {
-            for t in ["アーティスト", "曲数"] {
+        .header(HEADER_HEIGHT, |mut h| {
+            for t in ["Artist", "Tracks"] {
                 h.col(|ui| {
-                    ui.strong(t);
+                    ui.label(egui::RichText::new(t).weak());
                 });
             }
         })
         .body(|body| {
-            body.rows(row_h, artists.len(), |mut row| {
+            body.rows(ROW_HEIGHT, artists.len(), |mut row| {
                 let i = row.index();
                 let (name, count) = match artists.get(i) {
                     Some(n) => n,
@@ -149,11 +164,10 @@ pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
 pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
     if state.genres.is_empty() {
         ui.centered_and_justified(|ui| {
-            ui.label("ジャンルがありません");
+            ui.label("No genres found.");
         });
         return;
     }
-    let row_h = 22.0;
     let genres = &state.genres;
     let mut clicked: Option<String> = None;
     TableBuilder::new(ui)
@@ -161,15 +175,15 @@ pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
         .sense(egui::Sense::click())
         .column(Column::initial(320.0).resizable(true).clip(true))
         .column(Column::remainder())
-        .header(24.0, |mut h| {
-            for t in ["ジャンル", "曲数"] {
+        .header(HEADER_HEIGHT, |mut h| {
+            for t in ["Genre", "Tracks"] {
                 h.col(|ui| {
-                    ui.strong(t);
+                    ui.label(egui::RichText::new(t).weak());
                 });
             }
         })
         .body(|body| {
-            body.rows(row_h, genres.len(), |mut row| {
+            body.rows(ROW_HEIGHT, genres.len(), |mut row| {
                 let i = row.index();
                 let (name, count) = match genres.get(i) {
                     Some(n) => n,
@@ -188,5 +202,16 @@ pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
         });
     if let Some(name) = clicked {
         state.set_nav(Nav::Genre(name));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_album_duration;
+
+    #[test]
+    fn format_album_duration_values() {
+        assert_eq!(format_album_duration(2_580_000), "43:00");
+        assert_eq!(format_album_duration(3_723_000), "1:02:03");
     }
 }

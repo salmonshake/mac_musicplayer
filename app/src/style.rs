@@ -1,11 +1,9 @@
 use eframe::egui::{self, FontFamily, FontId, TextStyle, vec2};
 
 /// Table row height (mockup)
-#[allow(dead_code)]
 pub const ROW_HEIGHT: f32 = 34.0;
 
 /// Table header height (mockup)
-#[allow(dead_code)]
 pub const HEADER_HEIGHT: f32 = 30.0;
 
 /// Sidebar panel width (mockup)

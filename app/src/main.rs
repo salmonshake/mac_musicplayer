@@ -26,14 +26,16 @@ impl eframe::App for MmpApp {
             ui::sidebar::show(ui, s);
         }
         // Central panel
-        egui::CentralPanel::default().show(ui, |ui| {
-            match &mut self.state {
-                Ok(s) => match s.nav.clone() {
-                    state::Nav::AllTracks
-                    | state::Nav::Artist(_)
-                    | state::Nav::Genre(_) => {
-                        ui::tracks::show(ui, s);
-                    }
+        egui::CentralPanel::default()
+            .frame(egui::Frame::central_panel(ui.style()).inner_margin(16.0))
+            .show(ui, |ui| {
+                match &mut self.state {
+                    Ok(s) => match s.nav.clone() {
+                        state::Nav::AllTracks
+                        | state::Nav::Artist(_)
+                        | state::Nav::Genre(_) => {
+                            ui::tracks::show(ui, s, true);
+                        }
                     state::Nav::Albums => {
                         ui::albums::show_albums(ui, s);
                     }
