@@ -40,6 +40,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
             .column(Column::remainder().clip(true))
     } else {
         builder
+            .column(Column::exact(56.0))
             .column(Column::initial(160.0).resizable(true).clip(true))
             .column(Column::initial(100.0).resizable(true).clip(true))
             .column(Column::remainder().clip(true))
@@ -99,13 +100,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                         ui.label(&t.album);
                     });
                 });
-                // Genre column: center
-                row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(&t.genre);
-                    });
-                });
             }
+            // Genre column: center
+            row.col(|ui| {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.label(&t.genre);
+                });
+            });
             // Bitrate/Format column: center
             row.col(|ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
