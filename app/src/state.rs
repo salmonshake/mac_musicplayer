@@ -92,13 +92,13 @@ impl AppState {
         self.watch = None; // stop watching while scanning
         self.scan = Some(scan_all_in_background(self.db_path.clone()));
         self.scanning = true;
-        self.status = "スキャン中…".into();
+        self.status = "Scanning…".into();
     }
 
     fn start_watch(&mut self) {
         match LibraryWatcher::start(self.db_path.clone(), Duration::from_millis(1000)) {
             Ok(w) => self.watch = Some(w),
-            Err(e) => self.status = format!("監視を開始できません: {e}"),
+            Err(e) => self.status = format!("Could not start watching: {e}"),
         }
     }
 
@@ -116,14 +116,14 @@ impl AppState {
         match self.lib.folders() {
             Ok(v) => self.folders = v,
             Err(e) => {
-                self.status = format!("読み込みエラー: {e}");
+                self.status = format!("Load error: {e}");
                 self.folders.clear();
             }
         }
         match self.lib.list_genres() {
             Ok(v) => self.genres = v,
             Err(e) => {
-                self.status = format!("読み込みエラー: {e}");
+                self.status = format!("Load error: {e}");
                 self.genres.clear();
             }
         }
@@ -151,7 +151,7 @@ impl AppState {
                 match self.lib.list_albums(search.as_deref()) {
                     Ok(v) => self.albums = v,
                     Err(e) => {
-                        self.status = format!("読み込みエラー: {e}");
+                        self.status = format!("Load error: {e}");
                         self.albums.clear();
                     }
                 }
@@ -161,7 +161,7 @@ impl AppState {
                 match self.lib.list_artists() {
                     Ok(v) => self.artists = v,
                     Err(e) => {
-                        self.status = format!("読み込みエラー: {e}");
+                        self.status = format!("Load error: {e}");
                         self.artists.clear();
                     }
                 }
@@ -173,7 +173,7 @@ impl AppState {
             match self.lib.list_tracks(&f) {
                 Ok(v) => self.tracks = v,
                 Err(e) => {
-                    self.status = format!("読み込みエラー: {e}");
+                    self.status = format!("Load error: {e}");
                     self.tracks.clear();
                 }
             }
@@ -203,7 +203,7 @@ impl AppState {
                 self.reload();
                 self.start_scan();
             }
-            Err(e) => self.status = format!("フォルダを追加できません: {e}"),
+            Err(e) => self.status = format!("Could not add folder: {e}"),
         }
     }
 
@@ -214,7 +214,7 @@ impl AppState {
                 self.reload();
                 self.start_scan();
             }
-            Err(e) => self.status = format!("フォルダを削除できません: {e}"),
+            Err(e) => self.status = format!("Could not remove folder: {e}"),
         }
     }
 
@@ -231,7 +231,7 @@ impl AppState {
         for ev in scan_events {
             match ev {
                 ScanEvent::Started { folder } => {
-                    self.status = format!("スキャン中: {}", folder.display());
+                    self.status = format!("Scanning: {}", folder.display());
                 }
                 ScanEvent::Finished { stats, .. } => {
                     if stats.added + stats.updated + stats.removed > 0 {

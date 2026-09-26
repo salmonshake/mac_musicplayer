@@ -5,36 +5,38 @@ use crate::state::{AppState, Nav};
 
 /// Show the top toolbar panel with a search field and status text.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
-    egui::Panel::top("toolbar").show(ui, |ui| {
-        ui.horizontal(|ui| {
-            let mut q = state.search.clone();
-            let id = egui::Id::new("search_box");
-            let resp = ui
-                .add(
-                    egui::TextEdit::singleline(&mut q)
-                        .id(id)
-                        .hint_text("検索")
-                        .desired_width(280.0),
-                );
-            // ⌘F: focus the search box
-            if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
-                resp.request_focus();
-            }
-            // Esc while focused: clear
-            if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                q.clear();
-            }
-            // Push back to state when changed
-            if q != state.search {
-                state.set_search(q);
-            }
+    egui::Panel::top("toolbar")
+        .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(16, 8)))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let mut q = state.search.clone();
+                let id = egui::Id::new("search_box");
+                let resp = ui
+                    .add(
+                        egui::TextEdit::singleline(&mut q)
+                            .id(id)
+                            .hint_text("Search")
+                            .desired_width(320.0),
+                    );
+                // ⌘F: focus the search box
+                if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
+                    resp.request_focus();
+                }
+                // Esc while focused: clear
+                if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    q.clear();
+                }
+                // Push back to state when changed
+                if q != state.search {
+                    state.set_search(q);
+                }
 
-            // Status text on the right
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(status_text(state));
+                // Status text on the right
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(status_text(state));
+                });
             });
         });
-    });
 }
 
 /// Status text: state.status when non-empty, otherwise view-dependent count.
@@ -46,16 +48,16 @@ fn status_text(state: &AppState) -> String {
         Nav::AllTracks
         | Nav::Artist(_)
         | Nav::Genre(_) => {
-            format!("{} 曲", state.tracks.len())
+            format!("{} tracks", state.tracks.len())
         }
         Nav::Albums | Nav::Album(_) => {
-            format!("{} アルバム", state.albums.len())
+            format!("{} albums", state.albums.len())
         }
         Nav::Artists => {
-            format!("{} アーティスト", state.artists.len())
+            format!("{} artists", state.artists.len())
         }
         Nav::Genres => {
-            format!("{} ジャンル", state.genres.len())
+            format!("{} genres", state.genres.len())
         }
     }
 }

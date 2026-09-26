@@ -9,11 +9,9 @@ pub const ROW_HEIGHT: f32 = 34.0;
 pub const HEADER_HEIGHT: f32 = 30.0;
 
 /// Sidebar panel width (mockup)
-#[allow(dead_code)]
 pub const SIDEBAR_WIDTH: f32 = 230.0;
 
 /// Panel inner margin (mockup)
-#[allow(dead_code)]
 pub const PANEL_MARGIN: f32 = 14.0;
 
 /// Apply font sizes and spacing to match the GUI mockup (docs/gui-mockup.webp).
