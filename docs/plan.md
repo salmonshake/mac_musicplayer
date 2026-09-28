@@ -756,3 +756,18 @@
 - ファイル: `app/src/ui/queue.rs`, `app/src/main.rs`
 - 内容: プレイヤーバー右端の `☰` で右側パネル（幅 300）を開閉。`Up Next` 見出しと `now.upcoming` の曲（タイトル / アーティスト）。クリックでその曲へジャンプ
 - 完了条件: build・clippy 成功
+
+### 段階7 タスク細分化（2026-09-28）
+方針: 1 タスク = 1 ファイル・関数 1〜2 個・テスト 1〜数個。先に骨組み（型・関数シグネチャ・doc）を作り、以降のタスクで中身を埋める。
+上の Task 7.3 / 7.4 はこの細分化版で置き換える（仕様は上の記述どおり）。
+
+- **7.3a** `core/src/player/{mod.rs,queue.rs}`（+ lib.rs）: `RepeatMode`、`Queue` 構造体、`new` / `current` / `next` / `prev` / `items`（シャッフル・リピートはまだ考慮しない＝order は 0..n、next は末尾で None、prev は先頭で先頭のまま）。テスト: 順送り・戻り・末尾・空キュー
+- **7.3b** `queue.rs`: xorshift64 と `set_shuffle`（現在曲を先頭に固定し残りを並べ替え／解除で元の並びの現在位置へ）。`new` の shuffle 引数も反映。テスト: 全曲1回ずつ・現在曲が先頭・同 seed で同順・解除で復帰
+- **7.3c** `queue.rs`: `set_repeat` / `advance_on_end` / `peek_after_current` / `jump_to_item` / `upcoming`、`next` の All/One 対応。テスト: 各リピートの末尾挙動・peek と advance の一致・jump
+- **7.4a** `core/src/player/engine.rs`（骨組み）: `PlayState` / `PlayerStatus` / `enum Command` / `Player`（各メソッドは Command を送るだけ、`status()`、Drop で Quit → join）。エンジンスレッドは Quit を受けたら終わるだけ。テスト: new → status が Stopped → drop が固まらない
+- **7.4b** `engine.rs`: `PlayQueue` で Queue を作り、現在曲を decode::open → OutputUnit（音量は status.volume）→ リングへ書き続け、曲の終わりでリングが空になるのを待って Stopped。テスト（音量 0）: gap_a 1 曲で Playing → 約 3 秒後 Stopped
+- **7.4c** `engine.rs`: `TogglePause`（stop/start と state 切替）/ `Stop`（出力破棄・Stopped）/ `SetVolume`（shared.set_volume と status）。テスト: 一時停止中は frames_played が増えない・再開で増える・stop で Stopped
+- **7.4d** `engine.rs`: 再生位置。曲の開始時の frames_played を記録し `position_ms = (frames_played - start) * 1000 / rate`、`duration_ms` は DB を使わずデコード前に分からないので 0 のまま可（UI 側で TrackRow の長さを使う）。status を 50ms ごとに更新。テスト: 1 秒後 position が 700〜1300
+- **7.4e** `engine.rs`: `Seek` / `Next` / `Prev` / `JumpTo`。共通手順 = `request_flush()` → `flush_pending()` が false になるまで待つ（最大 200ms、一時停止中は待たずに flush フラグだけ立てて再開時に効かせる）→ デコーダを開き直す/seek → start 位置を更新。テスト: seek 2000ms 後 position 2000±300、next で current_item が 1
+- **7.4f** `engine.rs`: 曲の終わりで `peek_after_current` の曲を開き、形式が同じなら同じリングへ続けて書き（ギャップレス）、境界フレームを記録。frames_played が境界を越えたら `advance_on_end` して status 更新。違う形式ならリングが空になってから出力を作り直す。テスト: gap_a,gap_b で current_item が 0→1 と変わり、合計約 6 秒で Stopped
+- **7.4g** `engine.rs`: 開けない曲はスキップして status.error に記録、デバイス指定と消失時のデフォルトへのフォールバック（段階4 の Session と同じ）。テスト: 存在しないパスを挟んだキューで落ちずに次へ
