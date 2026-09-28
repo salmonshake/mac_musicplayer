@@ -7,6 +7,7 @@ use mmp_core::library::{
     TrackRow,
 };
 use mmp_core::paths;
+use mmp_core::playlist::PlaylistStore;
 use mmp_core::player::{Player, PlayerStatus, PlayState};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -66,6 +67,13 @@ pub struct AppState {
     pub queue_items: Vec<TrackRow>,
     /// Up Next パネルの表示切替フラグ (7.8)。
     pub show_queue: bool,
+    /// プレイリスト名の一覧（ソート済み）。
+    pub playlists: Vec<String>,
+    /// プレイリストファイルのストア。ディレクトリ作成に失敗した場合は None。
+    pub playlist_store: Option<PlaylistStore>,
+    /// Nav::Playlist 用: `tracks` の各行がプレイリストファイル上の何番目か。
+    #[expect(dead_code)]
+    pub playlist_positions: Vec<usize>,
     scan: Option<ScanHandle>,
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
 }
@@ -75,6 +83,11 @@ impl AppState {
     pub fn open() -> Result<Self, String> {
         let db_path = paths::library_db_path().map_err(|e| e.to_string())?;
         let lib = Library::open(&db_path).map_err(|e| e.to_string())?;
+        let (playlist_store, store_err) =
+            match paths::playlists_dir().and_then(PlaylistStore::new) {
+                Ok(st) => (Some(st), None),
+                Err(e) => (None, Some(format!("Playlists unavailable: {e}"))),
+            };
         let mut s = Self {
             lib,
             db_path,
@@ -93,11 +106,18 @@ impl AppState {
             now: PlayerStatus::default(),
             queue_items: Vec::new(),
             show_queue: false,
+            playlists: Vec::new(),
+            playlist_store,
+            playlist_positions: Vec::new(),
             scan: None,
             watch: None,
         };
+        s.reload_playlists();
         s.reload();
         s.start_scan();
+        if let Some(e) = store_err {
+            s.status = e;
+        }
         Ok(s)
     }
 
@@ -190,6 +210,18 @@ impl AppState {
                     self.tracks.clear();
                 }
             }
+        }
+    }
+
+    /// Reloads the playlist name list from `playlist_store`.
+    pub fn reload_playlists(&mut self) {
+        match self.playlist_store.as_ref().map(|st| st.list()) {
+            Some(Ok(names)) => self.playlists = names,
+            Some(Err(e)) => {
+                self.status = format!("Load error: {e}");
+                self.playlists.clear();
+            }
+            None => self.playlists.clear(),
         }
     }
 
