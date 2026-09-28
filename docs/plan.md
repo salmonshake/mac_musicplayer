@@ -771,3 +771,10 @@
 - **7.4e** `engine.rs`: `Seek` / `Next` / `Prev` / `JumpTo`。共通手順 = `request_flush()` → `flush_pending()` が false になるまで待つ（最大 200ms、一時停止中は待たずに flush フラグだけ立てて再開時に効かせる）→ デコーダを開き直す/seek → start 位置を更新。テスト: seek 2000ms 後 position 2000±300、next で current_item が 1
 - **7.4f** `engine.rs`: 曲の終わりで `peek_after_current` の曲を開き、形式が同じなら同じリングへ続けて書き（ギャップレス）、境界フレームを記録。frames_played が境界を越えたら `advance_on_end` して status 更新。違う形式ならリングが空になってから出力を作り直す。テスト: gap_a,gap_b で current_item が 0→1 と変わり、合計約 6 秒で Stopped
 - **7.4g** `engine.rs`: 開けない曲はスキップして status.error に記録、デバイス指定と消失時のデフォルトへのフォールバック（段階4 の Session と同じ）。テスト: 存在しないパスを挟んだキューで落ちずに次へ
+
+### Task 7.9 プレイヤーバーの見た目をモックに寄せる
+- ファイル: `app/src/ui/player_bar.rs`
+- 内容: 3 領域の固定レイアウト（左 320: アートワーク+曲情報 / 右 260: 音量+キュー / 中央: 残り）。中央はボタン行とシークバーを水平中央に。
+  ボタンは枠なし（`Button::frame(false)`）の大きめアイコン（20pt、再生/一時停止は 26pt）、シャッフル・リピート有効時は `selection.bg_fill` 色。パネル高 100
+- egui 0.36: `ui.scope_builder(egui::UiBuilder::new().max_rect(rect).layout(layout), |ui| ..)`
+- 完了条件: build・clippy 成功、スクショで中央配置を確認
