@@ -32,6 +32,28 @@ impl eframe::App for MmpApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Keyboard shortcuts (before panels so they work regardless of focus).
+        if let Ok(s) = &mut self.state {
+            let typing = ui.ctx().egui_wants_keyboard_input();
+            let (space, next, prev) = ui.input(|i| {
+                (i.key_pressed(egui::Key::Space),
+                 i.modifiers.command && i.key_pressed(egui::Key::ArrowRight),
+                 i.modifiers.command && i.key_pressed(egui::Key::ArrowLeft))
+            });
+            if space && !typing {
+                if s.now_track().is_some() {
+                    s.player.toggle_pause();
+                } else if let Some(i) = s.selected_track {
+                    s.play_from(i);
+                }
+            }
+            if next {
+                s.player.next();
+            }
+            if prev {
+                s.player.prev();
+            }
+        }
         // Toolbar (top panel)
         if let Ok(s) = &mut self.state {
             ui::toolbar::show(ui, s);

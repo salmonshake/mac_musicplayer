@@ -230,7 +230,6 @@ impl AppState {
 
     /// 表示中の一覧をキューに入れ、index の曲から再生する。
     // 7.6 以降の UI で使う
-    #[allow(dead_code)]
     pub fn play_from(&mut self, index: usize) {
         if index >= self.tracks.len() {
             return;

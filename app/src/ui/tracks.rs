@@ -25,7 +25,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
     }
     let tracks = &state.tracks;
     let selected = state.selected_track;
+    // Current playing track path (for highlighting + double-click replay).
+    let playing_path: Option<std::path::PathBuf> = state.now.path.clone();
     let mut clicked: Option<usize> = None;
+    let mut double_clicked: Option<usize> = None;
     let builder = TableBuilder::new(ui)
         .striped(true)
         .sense(egui::Sense::click())
@@ -63,7 +66,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
             let Some(t) = tracks.get(i) else {
                 return;
             };
-            row.set_selected(selected == Some(i));
+            // Highlight the currently playing row (different from selection).
+            let is_playing = playing_path.as_deref() == Some(t.path.as_path());
+            row.set_selected(selected == Some(i) || is_playing);
             // # column: right-aligned
             row.col(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -75,10 +80,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     );
                 });
             });
-            // Title column: center
+            // Title column: center, show "PLAYING" badge when this track is active.
             row.col(|ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.label(&t.title);
+                    if is_playing {
+                        ui.label(egui::RichText::new(" PLAYING ")
+                            .small()
+                            .strong()
+                            .color(egui::Color32::WHITE)
+                            .background_color(ui.visuals().selection.bg_fill));
+                    }
                 });
             });
             // Length column: right-aligned
@@ -116,9 +128,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
             if row.response().clicked() {
                 clicked = Some(i);
             }
+            if row.response().double_clicked() {
+                double_clicked = Some(i);
+            }
         });
     });
     if let Some(i) = clicked {
+        state.selected_track = Some(i);
+    }
+    // Double-click: play from this track (replay from the clicked position).
+    if let Some(i) = double_clicked {
+        state.play_from(i);
         state.selected_track = Some(i);
     }
 }
