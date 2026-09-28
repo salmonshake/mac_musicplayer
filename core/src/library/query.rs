@@ -6,10 +6,15 @@
 
 use std::path::PathBuf;
 
-use rusqlite::params_from_iter;
+use rusqlite::{params_from_iter, OptionalExtension};
 
 use super::LibraryError;
 use crate::library::Library;
+
+/// Column list for SELECT queries on the tracks table.
+pub(crate) const TRACK_COLUMNS: &str =
+    "id, path, title, artist, album, album_artist, album_key, genre, \
+     track_no, disc_no, year, duration_ms, sample_rate, bit_depth, bitrate_kbps";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -55,6 +60,48 @@ pub struct TrackFilter {
     pub artist: Option<String>,
     pub genre: Option<String>,
     pub search: Option<String>,
+}
+
+/// Build a `TrackRow` from a SQLite row.
+///
+/// Column indices (0-14) match `TRACK_COLUMNS`.  Integral columns are read
+/// as `i64` first and then narrowed to `u32` / `u64` / `u8` with
+/// `and_then` / `as` casts so that `unwrap` / `expect` never appear in
+/// product code.
+fn track_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackRow> {
+    let id: i64 = row.get(0)?;
+    let path: String = row.get(1)?;
+    let title: String = row.get(2)?;
+    let artist: String = row.get(3)?;
+    let album: String = row.get(4)?;
+    let album_artist: String = row.get(5)?;
+    let album_key: String = row.get(6)?;
+    let genre: String = row.get(7)?;
+    let track_no: Option<i64> = row.get(8)?;
+    let disc_no: Option<i64> = row.get(9)?;
+    let year: Option<i64> = row.get(10)?;
+    let duration_ms: i64 = row.get(11)?;
+    let sample_rate: Option<i64> = row.get(12)?;
+    let bit_depth: Option<i64> = row.get(13)?;
+    let bitrate_kbps: Option<i64> = row.get(14)?;
+
+    Ok(TrackRow {
+        id,
+        path: PathBuf::from(path),
+        title,
+        artist,
+        album,
+        album_artist,
+        album_key,
+        genre,
+        track_no: track_no.and_then(|v| u32::try_from(v).ok()),
+        disc_no: disc_no.and_then(|v| u32::try_from(v).ok()),
+        year: year.and_then(|v| u32::try_from(v).ok()),
+        duration_ms: duration_ms as u64,
+        sample_rate: sample_rate.and_then(|v| u32::try_from(v).ok()),
+        bit_depth: bit_depth.and_then(|v| u8::try_from(v).ok()),
+        bitrate_kbps: bitrate_kbps.and_then(|v| u32::try_from(v).ok()),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -140,48 +187,12 @@ impl Library {
         };
 
         let sql = format!(
-            "SELECT id, path, title, artist, album, album_artist, album_key, genre, \
-             track_no, disc_no, year, duration_ms, sample_rate, bit_depth, bitrate_kbps \
-             FROM tracks {} ORDER BY {}",
+            "SELECT {TRACK_COLUMNS} FROM tracks {} ORDER BY {}",
             where_clause, order_by
         );
 
         let mut stmt = self.conn.prepare(&sql).map_err(LibraryError::Db)?;
-        let rows = stmt.query_map(params_from_iter(params.iter()), |row| {
-            let id: i64 = row.get(0)?;
-            let path: String = row.get(1)?;
-            let title: String = row.get(2)?;
-            let artist: String = row.get(3)?;
-            let album: String = row.get(4)?;
-            let album_artist: String = row.get(5)?;
-            let album_key: String = row.get(6)?;
-            let genre: String = row.get(7)?;
-            let track_no: Option<i64> = row.get(8)?;
-            let disc_no: Option<i64> = row.get(9)?;
-            let year: Option<i64> = row.get(10)?;
-            let duration_ms: i64 = row.get(11)?;
-            let sample_rate: Option<i64> = row.get(12)?;
-            let bit_depth: Option<i64> = row.get(13)?;
-            let bitrate_kbps: Option<i64> = row.get(14)?;
-
-            Ok(TrackRow {
-                id,
-                path: PathBuf::from(path),
-                title,
-                artist,
-                album,
-                album_artist,
-                album_key,
-                genre,
-                track_no: track_no.and_then(|v| u32::try_from(v).ok()),
-                disc_no: disc_no.and_then(|v| u32::try_from(v).ok()),
-                year: year.and_then(|v| u32::try_from(v).ok()),
-                duration_ms: duration_ms as u64,
-                sample_rate: sample_rate.and_then(|v| u32::try_from(v).ok()),
-                bit_depth: bit_depth.and_then(|v| u8::try_from(v).ok()),
-                bitrate_kbps: bitrate_kbps.and_then(|v| u32::try_from(v).ok()),
-            })
-        }).map_err(LibraryError::Db)?;
+        let rows = stmt.query_map(params_from_iter(params.iter()), track_from_row).map_err(LibraryError::Db)?;
 
         rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
     }
@@ -277,6 +288,24 @@ impl Library {
             Ok((genre, count as u32))
         }).map_err(LibraryError::Db)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
+    }
+
+    /// Resolve playlist paths to track rows in the DB.
+    ///
+    /// The returned `usize` is the index into the input *paths* slice.
+    /// Paths that are not found in the DB are silently skipped, preserving
+    /// the original order.
+    pub fn tracks_by_paths(&self, paths: &[PathBuf]) -> Result<Vec<(usize, TrackRow)>, LibraryError> {
+        let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1");
+        let mut stmt = self.conn.prepare(&sql).map_err(LibraryError::Db)?;
+        let mut out = Vec::new();
+        for (i, p) in paths.iter().enumerate() {
+            let key = p.to_string_lossy();
+            if let Some(t) = stmt.query_row([key.as_ref()], track_from_row).optional().map_err(LibraryError::Db)? {
+                out.push((i, t));
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -833,5 +862,36 @@ mod tests {
         }
         // Verify list_tracks works with empty filter (no query errors).
         assert!(lib.list_tracks(&TrackFilter::default()).is_ok());
+    }
+
+    #[test]
+    fn test_tracks_by_paths() {
+        let dir = TempDir::with_prefix("query_paths").unwrap();
+        let lib = Library::open_in_memory().unwrap();
+        setup_tracks(&lib, &dir);
+
+        // Grab paths for track 1 (01.flac) and track 2 (02.mp3) from DB.
+        let all = lib.list_tracks(&TrackFilter::default()).unwrap();
+        let track1_path = all.iter().find(|t| t.path.to_string_lossy().ends_with("01.flac")).map(|t| t.path.clone()).unwrap();
+        let track2_path = all.iter().find(|t| t.path.to_string_lossy().ends_with("02.mp3")).map(|t| t.path.clone()).unwrap();
+
+        // Non-existent path.
+        let nonexistent = dir.path().join("does_not_exist.flac");
+
+        // [b, x, a, b]  →  positions [0, 2, 3], paths [b, a, b]
+        let paths = vec![track2_path.clone(), nonexistent, track1_path.clone(), track2_path.clone()];
+        let result = lib.tracks_by_paths(&paths).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, 0);
+        assert_eq!(result[1].0, 2);
+        assert_eq!(result[2].0, 3);
+        assert_eq!(result[0].1.path, track2_path);
+        assert_eq!(result[1].1.path, track1_path);
+        assert_eq!(result[2].1.path, track2_path);
+
+        // Empty paths → empty result.
+        let empty: Vec<PathBuf> = Vec::new();
+        assert!(lib.tracks_by_paths(&empty).unwrap().is_empty());
     }
 }
