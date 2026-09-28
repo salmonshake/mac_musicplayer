@@ -805,3 +805,18 @@
   - **8.6d** state.rs: `add_to_playlist(name, &[PathBuf])`、`remove_from_playlist(track_index)`、`move_in_playlist(track_index, up)`
 - **8.7** `app/src/ui/sidebar.rs`: PLAYLISTS セクション（LIBRARY と GENRES の間）。`+` で「New Playlist」（重複しない名前 `New Playlist`, `New Playlist 2`…で作成して即選択）、右クリック Rename（インラインの TextEdit）/ Delete
 - **8.8** `app/src/ui/tracks.rs`: 行の右クリックメニュー（`Add to Playlist ▸`、Nav::Playlist のときは `Remove from Playlist` / `Move Up` / `Move Down`）
+
+## 段階9: メディアキー / Now Playing（souvlaki 0.8.3）
+
+設計:
+- `app/src/media.rs` に OS のメディア操作の橋渡しを置く（core には入れない。UI スレッド側の関心事のため）
+- souvlaki の `MediaControls::attach` のコールバック（別スレッド）では `mpsc::Sender` に送って `ctx.request_repaint()` するだけ。処理は UI スレッドの `logic()` で行う
+- イベント→操作の変換は純粋関数 `media_action` にしてテストする（Seek は ±10 秒、SeekBy は指定量、SetPosition は絶対位置。0〜duration に丸める）
+- Now Playing への反映: 曲（path）が変わったら `set_metadata`、状態（Playing/Paused/Stopped）が変わったか位置が 1 秒単位で変わったら `set_playback`
+- `MediaControls::new` が失敗しても落ちない（Option で持ち、何もしない）
+
+タスク:
+- **9.1** `app/Cargo.toml` に souvlaki = "0.8.3"（指揮役が追加済み）、`app/src/media.rs`: `pub enum MediaAction { Play, Pause, Toggle, Next, Prev, Stop, SeekTo(u64) }`、`pub fn media_action(ev: &MediaControlEvent, position_ms: u64, duration_ms: u64) -> Option<MediaAction>` + テスト
+- **9.2** `app/src/media.rs`: `pub struct MediaKeys { controls, rx }`、`pub fn new(ctx: egui::Context) -> Option<Self>`、`pub fn poll_events(&self) -> Vec<MediaControlEvent>`
+- **9.3** `app/src/media.rs`: `MediaKeys::update(&mut self, now: &PlayerStatus, track: Option<&TrackRow>)`（前回値を覚えて変化時だけ OS に送る）
+- **9.4** `app/src/main.rs` + `app/src/state.rs`: `MmpApp` に `media: Option<MediaKeys>`、`logic()` で poll_events → `AppState::apply_media_action(MediaAction)` → `update`
