@@ -778,3 +778,26 @@
   ボタンは枠なし（`Button::frame(false)`）の大きめアイコン（20pt、再生/一時停止は 26pt）、シャッフル・リピート有効時は `selection.bg_fill` 色。パネル高 100
 - egui 0.36: `ui.scope_builder(egui::UiBuilder::new().max_rect(rect).layout(layout), |ui| ..)`
 - 完了条件: build・clippy 成功、スクショで中央配置を確認
+
+---
+
+## 段階8: プレイリスト（作成・編集・削除、永続化込み）
+
+方針:
+- 保存先は DB とは別: `~/Library/Application Support/MacMusicPlay/playlists/<名前>.m3u8`（1 プレイリスト = 1 ファイル、UTF-8、絶対パス）。DB 削除・再スキャンで消えない。依存追加なし
+- 書き込みは一時ファイル（同じディレクトリの `.<名前>.m3u8.tmp`）に書いてから rename（途中で落ちても壊れない）
+- 名前はファイル名にそのまま使うので、`/` `:` と先頭の `.` と制御文字を禁止（`_` に置換しない。エラーで返す）。重複はエラー
+- プレイリスト内の曲は DB の TrackRow に解決して表示。DB に無いパス（外付けが外れている等）は一覧から省くが、m3u8 からは消さない
+- 並び順はファイルの順。同じ曲の重複は許す（位置で扱う）
+- UI（モック）: サイドバーに `PLAYLISTS` セクション（名前一覧・`+` で新規・右クリックで Rename / Delete）。曲行の右クリックに `Add to Playlist ▸ <名前>`。プレイリスト表示中は右クリック `Remove from Playlist` と `Move Up` / `Move Down`
+- "recently added" 等のスマートプレイリストは MVP 外（後で検討）
+
+細分化（1 タスク = 1 ファイル・関数 1〜2 個・テスト）:
+- **8.1** `core/src/playlist/{mod.rs,m3u.rs}`（+ lib.rs）: `pub fn parse_m3u(text: &str, base: &Path) -> Vec<PathBuf>`（`#` 行・空行を無視、相対パスは base 基準で絶対化、CRLF 対応）と `pub fn write_m3u(paths: &[PathBuf]) -> String`（先頭 `#EXTM3U`、改行 `\n`）。テスト: 往復・コメント/空行・相対パス・日本語パス・CRLF
+- **8.2** `core/src/playlist/store.rs`: `pub struct PlaylistStore { dir: PathBuf }`、`new(dir) -> io::Result<Self>`（create_dir_all）、`validate_name(&str) -> Result<(), PlaylistError>`、`list() -> io::Result<Vec<String>>`（名前順）、`load(name) -> Result<Vec<PathBuf>, PlaylistError>`、`save(name, &[PathBuf])`（tmp→rename）。`PlaylistError { InvalidName(String), AlreadyExists(String), NotFound(String), Io(#[from] io::Error) }`。テスト（tempdir）
+- **8.3** `store.rs`: `create(name)`（空で作成・重複エラー）、`rename(old, new)`、`delete(name)`、`add(name, &[PathBuf])`（末尾追加）、`remove_at(name, index)`、`move_item(name, from, to)`。テスト
+- **8.4** `core/src/library/query.rs`: `pub fn tracks_by_paths(&self, paths: &[PathBuf]) -> Result<Vec<(usize, TrackRow)>, LibraryError>`（戻り値の usize は paths 上の位置。DB に無いものは省く。順序はpaths順）。テスト
+- **8.5** `core/src/paths.rs`: `pub fn playlists_dir() -> io::Result<PathBuf>`（data_dir/playlists）。テスト（data_dir_in と同様）
+- **8.6** `app/src/state.rs`: `pub playlists: Vec<String>`、`playlist_store: Option<PlaylistStore>`、`Nav::Playlist(String)`、`playlist_positions: Vec<usize>`（表示中 tracks[i] のプレイリスト上の位置）、`reload` で Nav::Playlist の曲を読む、`create_playlist / rename_playlist / delete_playlist / add_to_playlist(name, &[PathBuf]) / remove_from_playlist(track_index) / move_in_playlist(track_index, up: bool)`（失敗は status に）
+- **8.7** `app/src/ui/sidebar.rs`: PLAYLISTS セクション（LIBRARY と GENRES の間）。`+` で「New Playlist」（重複しない名前 `New Playlist`, `New Playlist 2`…で作成して即選択）、右クリック Rename（インラインの TextEdit）/ Delete
+- **8.8** `app/src/ui/tracks.rs`: 行の右クリックメニュー（`Add to Playlist ▸`、Nav::Playlist のときは `Remove from Playlist` / `Move Up` / `Move Down`）
