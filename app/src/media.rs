@@ -1,8 +1,12 @@
 //! OS media keys / Now Playing bridge (souvlaki).
 
 use eframe::egui;
-use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig, SeekDirection};
+use mmp_core::library::TrackRow;
+use mmp_core::player::{PlayState, PlayerStatus};
+use souvlaki::{MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, MediaControls, PlatformConfig, SeekDirection};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
+use std::time::Duration;
 
 /// Seek step for Seek(Forward/Backward) events.
 #[allow(dead_code)]
@@ -68,11 +72,24 @@ pub fn media_action(
     })
 }
 
+/// Converts a `PlayState` and position into a `MediaPlayback` for Now Playing.
+#[allow(dead_code)]
+pub fn playback_for(state: PlayState, position_ms: u64) -> MediaPlayback {
+    let progress = Some(MediaPosition(Duration::from_millis(position_ms)));
+    match state {
+        PlayState::Playing => MediaPlayback::Playing { progress },
+        PlayState::Paused => MediaPlayback::Paused { progress },
+        PlayState::Stopped => MediaPlayback::Stopped,
+    }
+}
+
 /// Receives OS media-key / Now Playing events and publishes playback info.
 #[allow(dead_code)]
 pub struct MediaKeys {
     controls: MediaControls,
     rx: Receiver<MediaControlEvent>,
+    last_path: Option<PathBuf>,
+    last_playback: Option<(PlayState, u64)>,
 }
 
 #[allow(dead_code)]
@@ -90,20 +107,42 @@ impl MediaKeys {
             let _ = tx.send(ev);
             ctx.request_repaint();
         }).ok()?;
-        Some(Self { controls, rx })
+        Some(Self { controls, rx, last_path: None, last_playback: None })
     }
 
     /// Events received since the last call (non-blocking).
     pub fn poll_events(&self) -> Vec<MediaControlEvent> {
         self.rx.try_iter().collect()
     }
+
+    /// Publishes the current track and play state to Now Playing, only when they change.
+    #[allow(dead_code)]
+    pub fn update(&mut self, now: &PlayerStatus, track: Option<&TrackRow>) {
+        if now.path != self.last_path {
+            let meta = match track {
+                Some(t) => MediaMetadata {
+                    title: Some(&t.title),
+                    artist: Some(&t.artist),
+                    album: Some(&t.album),
+                    duration: Some(Duration::from_millis(t.duration_ms)),
+                    cover_url: None,
+                },
+                None => MediaMetadata::default(),
+            };
+            let _ = self.controls.set_metadata(meta);
+            self.last_path = now.path.clone();
+        }
+        let key = (now.state, now.position_ms / 1000);
+        if self.last_playback != Some(key) {
+            let _ = self.controls.set_playback(playback_for(now.state, now.position_ms));
+            self.last_playback = Some(key);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use souvlaki::MediaPosition;
-    use std::time::Duration;
 
     #[test]
     fn test_media_action_basic() {
@@ -159,6 +198,25 @@ mod tests {
                 duration
             ),
             Some(MediaAction::SeekTo(30_000))
+        );
+    }
+
+    #[test]
+    fn test_playback_for() {
+        // Playing + 1500ms → Playing { progress: Some(MediaPosition(1500ms)) }
+        assert_eq!(
+            playback_for(PlayState::Playing, 1500),
+            MediaPlayback::Playing { progress: Some(MediaPosition(Duration::from_millis(1500))) }
+        );
+        // Paused + 0ms → Paused { progress: Some(MediaPosition(0ms)) }
+        assert_eq!(
+            playback_for(PlayState::Paused, 0),
+            MediaPlayback::Paused { progress: Some(MediaPosition(Duration::ZERO)) }
+        );
+        // Stopped + 999ms → Stopped (no progress)
+        assert_eq!(
+            playback_for(PlayState::Stopped, 999),
+            MediaPlayback::Stopped
         );
     }
 }
