@@ -7,6 +7,7 @@ use mmp_core::library::{
     TrackRow,
 };
 use mmp_core::paths;
+use mmp_core::player::{Player, PlayerStatus, PlayState};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -57,6 +58,12 @@ pub struct AppState {
     pub scanning: bool,
     /// Status line text.
     pub status: String,
+    /// 再生エンジン (7.5)。
+    pub player: Player,
+    /// poll ごとに取得する最新の再生状態 (7.5)。
+    pub now: PlayerStatus,
+    /// キューに入れた時点の曲一覧。now.current_item はこの Vec の添字 (7.5)。
+    pub queue_items: Vec<TrackRow>,
     scan: Option<ScanHandle>,
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
 }
@@ -80,6 +87,9 @@ impl AppState {
             selected_track: None,
             scanning: false,
             status: String::new(),
+            player: Player::new(None),
+            now: PlayerStatus::default(),
+            queue_items: Vec::new(),
             scan: None,
             watch: None,
         };
@@ -218,6 +228,25 @@ impl AppState {
         }
     }
 
+    /// 表示中の一覧をキューに入れ、index の曲から再生する。
+    // 7.6 以降の UI で使う
+    #[allow(dead_code)]
+    pub fn play_from(&mut self, index: usize) {
+        if index >= self.tracks.len() {
+            return;
+        }
+        self.queue_items = self.tracks.clone();
+        let paths: Vec<PathBuf> = self.queue_items.iter().map(|t| t.path.clone()).collect();
+        self.player.play_queue(paths, index);
+    }
+
+    /// 再生中の曲（キューに入れた時点の TrackRow）を返す。
+    // 7.6 以降の UI で使う
+    #[allow(dead_code)]
+    pub fn now_track(&self) -> Option<&TrackRow> {
+        self.now.current_item.and_then(|i| self.queue_items.get(i))
+    }
+
     /// Handles scan/watch events and the delayed search; call every frame.
     pub fn poll(&mut self, ctx: &egui::Context) {
         let mut changed = false;
@@ -281,6 +310,12 @@ impl AppState {
         }
         if self.scanning || self.watch.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
+        }
+
+        // e) player status
+        self.now = self.player.status();
+        if self.now.state == PlayState::Playing {
+            ctx.request_repaint_after(Duration::from_millis(250));
         }
     }
 }
