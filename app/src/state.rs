@@ -111,6 +111,10 @@ pub struct AppState {
     pub playlist_store: Option<PlaylistStore>,
     /// Nav::Playlist 用: `tracks` の各行がプレイリストファイル上の何番目か。
     pub playlist_positions: Vec<usize>,
+    /// インライン名前変更進行中: (旧名, 編集バッファ)。
+    pub renaming_playlist: Option<(String, String)>,
+    /// 次フレームで Rename TextEdit にフォーカスを当てるフラグ。
+    pub rename_focus: bool,
     scan: Option<ScanHandle>,
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
 }
@@ -146,6 +150,8 @@ impl AppState {
             playlists: Vec::new(),
             playlist_store,
             playlist_positions: Vec::new(),
+            renaming_playlist: None,
+            rename_focus: false,
             scan: None,
             watch: None,
         };
@@ -374,7 +380,6 @@ impl AppState {
     /// Renames an existing playlist.
     ///
     /// Returns `true` on success, `false` on failure.
-    #[expect(dead_code, reason = "used by the sidebar in 8.7")]
     pub fn rename_playlist(&mut self, old: &str, new: &str) -> bool {
         let store = match &self.playlist_store {
             Some(st) => st,
@@ -400,7 +405,6 @@ impl AppState {
     }
 
     /// Deletes a playlist by name.
-    #[expect(dead_code, reason = "used by the sidebar in 8.7")]
     pub fn delete_playlist(&mut self, name: &str) {
         let store = match &self.playlist_store {
             Some(st) => st,

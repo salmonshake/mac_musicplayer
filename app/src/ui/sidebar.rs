@@ -16,8 +16,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 nav_item(ui, state, "artists", Nav::Artists, None);
                 nav_item(ui, state, "albums", Nav::Albums, None);
                 nav_item(ui, state, "genres", Nav::Genres, None);
-                if section_with_add(ui, "PLAYLISTS", 16.0, "New Playlist") {
-                    state.create_playlist();
+                if section_with_add(ui, "PLAYLISTS", 16.0, "New Playlist")
+                    && let Some(n) = state.create_playlist()
+                {
+                    state.renaming_playlist = Some((n.clone(), n));
+                    state.rename_focus = true;
                 }
                 let names: Vec<String> = state.playlists.clone();
                 for name in names {
@@ -84,6 +87,32 @@ fn section_with_add(ui: &mut egui::Ui, title: &str, top: f32, tip: &str) -> bool
 }
 
 fn playlist_item(ui: &mut egui::Ui, state: &mut AppState, name: &str) {
+    // Inline rename mode: show TextEdit when this playlist is being renamed.
+    if let Some((ref old, ref _buf)) = state.renaming_playlist
+        && old == name
+    {
+        let mut buf = _buf.clone();
+        let r = ui.add(
+            egui::TextEdit::singleline(&mut buf)
+                .desired_width(ui.available_width()),
+        );
+        if state.rename_focus {
+            r.request_focus();
+            state.rename_focus = false;
+        }
+        // Write back the buffer.
+        state.renaming_playlist = Some((name.to_string(), buf.clone()));
+        if r.lost_focus() {
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let new_name = buf.trim().to_string();
+            state.renaming_playlist = None;
+            if enter && !new_name.is_empty() && new_name != name {
+                state.rename_playlist(name, &new_name);
+            }
+        }
+        return;
+    }
+    // Normal display: button with context menu.
     let selected = matches!(state.nav, Nav::Playlist(ref n) if n == name);
     let fill = egui::Color32::from_white_alpha(22);
     let mut b =
@@ -92,9 +121,21 @@ fn playlist_item(ui: &mut egui::Ui, state: &mut AppState, name: &str) {
     if selected {
         b = b.fill(fill);
     }
-    if ui.add(b).clicked() {
+    let resp = ui.add(b);
+    if resp.clicked() {
         state.set_nav(Nav::Playlist(name.to_string()));
     }
+    resp.context_menu(|ui| {
+        if ui.button("Rename").clicked() {
+            state.renaming_playlist = Some((name.to_string(), name.to_string()));
+            state.rename_focus = true;
+            ui.close();
+        }
+        if ui.button("Delete").clicked() {
+            state.delete_playlist(name);
+            ui.close();
+        }
+    });
 }
 
 fn nav_item(ui: &mut egui::Ui, state: &mut AppState, label: &str, nav: Nav, _count: Option<u32>) {
