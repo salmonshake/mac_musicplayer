@@ -101,6 +101,79 @@ impl PlaylistStore {
     pub fn dir(&self) -> &Path {
         &self.dir
     }
+
+    /// 空のプレイリストを作る。同名があれば [`PlaylistError::AlreadyExists`]。
+    pub fn create(&self, name: &str) -> Result<(), PlaylistError> {
+        Self::validate_name(name)?;
+        if self.path_of(name).exists() {
+            return Err(PlaylistError::AlreadyExists(name.to_owned()));
+        }
+        self.save(name, &[])
+    }
+
+    /// プレイリストの名前を変える。
+    ///
+    /// `old` が存在しなければ [`NotFound`]、`new` が既にあれば [`AlreadyExists`]。
+    pub fn rename(&self, old: &str, new: &str) -> Result<(), PlaylistError> {
+        Self::validate_name(old)?;
+        Self::validate_name(new)?;
+        if !self.path_of(old).exists() {
+            return Err(PlaylistError::NotFound(old.to_owned()));
+        }
+        if old != new && self.path_of(new).exists() {
+            return Err(PlaylistError::AlreadyExists(new.to_owned()));
+        }
+        std::fs::rename(self.path_of(old), self.path_of(new))?;
+        Ok(())
+    }
+
+    /// プレイリストを削除する（曲ファイル自体は消さない）。
+    ///
+    /// 存在しなければ [`NotFound`]。
+    pub fn delete(&self, name: &str) -> Result<(), PlaylistError> {
+        Self::validate_name(name)?;
+        let p = self.path_of(name);
+        if !p.exists() {
+            return Err(PlaylistError::NotFound(name.to_owned()));
+        }
+        std::fs::remove_file(p)?;
+        Ok(())
+    }
+
+    /// 既存プレイリストの末尾に曲を追加する。
+    ///
+    /// 存在しないプレイリストには [`NotFound`] を返す。
+    /// 同じ曲の重複追加も許す。
+    pub fn add(&self, name: &str, paths: &[PathBuf]) -> Result<(), PlaylistError> {
+        let mut v = self.load(name)?;
+        v.extend_from_slice(paths);
+        self.save(name, &v)
+    }
+
+    /// 末尾から index 番目の曲を取り除く。
+    ///
+    /// 範囲外の場合は何もしない（Err を返さない）。
+    pub fn remove_at(&self, name: &str, index: usize) -> Result<(), PlaylistError> {
+        let mut v = self.load(name)?;
+        if index < v.len() {
+            v.remove(index);
+            self.save(name, &v)?;
+        }
+        Ok(())
+    }
+
+    /// 末尾から `from` 番目の曲を `to` 番目に移動する（`to` は移動後の位置）。
+    ///
+    /// 範囲外の場合は何もしない（Err を返さない）。
+    pub fn move_item(&self, name: &str, from: usize, to: usize) -> Result<(), PlaylistError> {
+        let mut v = self.load(name)?;
+        if from < v.len() && to < v.len() && from != to {
+            let item = v.remove(from);
+            v.insert(to, item);
+            self.save(name, &v)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -188,5 +261,149 @@ mod tests {
                 p.extension().and_then(|x| x.to_str()) == Some("tmp")
             });
         assert!(!has_tmp);
+    }
+
+    /// (7) create: 空プレイリストが作れる・list に出る・二重 create が AlreadyExists
+    #[test]
+    fn test_create() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
+
+        assert!(store.create("Rock").is_ok());
+        let names = store.list().unwrap();
+        assert!(names.contains(&"Rock".to_owned()));
+
+        // 同名は AlreadyExists
+        match store.create("Rock").unwrap_err() {
+            PlaylistError::AlreadyExists(n) => assert_eq!(n, "Rock"),
+            other => panic!("expected AlreadyExists, got {other}"),
+        }
+
+        // 存在しない名前の load は NotFound
+        assert!(store.load("no_such").is_err());
+    }
+
+    /// (8) rename: 古い名が消え、新しい名で load できる・既存名への rename が AlreadyExists・無い名前の rename が NotFound
+    #[test]
+    fn test_rename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
+
+        store.save("old", &[]).unwrap();
+
+        // 正常な rename
+        store.rename("old", "new_name").unwrap();
+        assert!(store.load("old").is_err());
+        assert!(store.load("new_name").is_ok());
+
+        // 既存名への rename は AlreadyExists
+        store.save("target", &[]).unwrap();
+        match store.rename("new_name", "target").unwrap_err() {
+            PlaylistError::AlreadyExists(n) => assert_eq!(n, "target"),
+            other => panic!("expected AlreadyExists, got {other}"),
+        }
+
+        // 存在しない名前の rename は NotFound
+        match store.rename("no_such", "x").unwrap_err() {
+            PlaylistError::NotFound(n) => assert_eq!(n, "no_such"),
+            other => panic!("expected NotFound, got {other}"),
+        }
+    }
+
+    /// (9) delete: 削除後に list から消える・無い名前の delete が NotFound
+    #[test]
+    fn test_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
+
+        store.save("to_del", &[]).unwrap();
+        assert!(store.list().unwrap().contains(&"to_del".to_owned()));
+
+        store.delete("to_del").unwrap();
+        assert!(!store.list().unwrap().contains(&"to_del".to_owned()));
+
+        // 既に無ければ NotFound
+        match store.delete("to_del").unwrap_err() {
+            PlaylistError::NotFound(n) => assert_eq!(n, "to_del"),
+            other => panic!("expected NotFound, got {other}"),
+        }
+    }
+
+    /// (10) add: 末尾に追加・同じ曲の重複追加も許す
+    #[test]
+    fn test_add() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
+
+        store.save("pl", &[]).unwrap();
+
+        store.add("pl", &[PathBuf::from("/a.flac")]).unwrap();
+        store.add("pl", &[PathBuf::from("/b.mp3")]).unwrap();
+        store.add("pl", &[PathBuf::from("/a.flac")]).unwrap(); // 重複追加 OK
+
+        let loaded = store.load("pl").unwrap();
+        assert_eq!(
+            loaded,
+            vec![
+                PathBuf::from("/a.flac"),
+                PathBuf::from("/b.mp3"),
+                PathBuf::from("/a.flac"),
+            ]
+        );
+
+        // 存在しないプレイリストへの add は NotFound
+        assert!(store.add("no_such", &[PathBuf::from("/x")]).is_err());
+    }
+
+    /// (11) remove_at: 指定インデックスを削除・範囲外は変化なし
+    #[test]
+    fn test_remove_at() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
+
+        store.save("pl", &[
+            PathBuf::from("/a"),
+            PathBuf::from("/b"),
+            PathBuf::from("/c"),
+        ]).unwrap();
+
+        // index=1 ("b") を削除
+        store.remove_at("pl", 1).unwrap();
+        let loaded = store.load("pl").unwrap();
+        assert_eq!(loaded, vec![PathBuf::from("/a"), PathBuf::from("/c")]);
+
+        // 範囲外 (index=99) は何もしない
+        store.remove_at("pl", 99).unwrap();
+        let loaded = store.load("pl").unwrap();
+        assert_eq!(loaded, vec![PathBuf::from("/a"), PathBuf::from("/c")]);
+    }
+
+    /// (12) move_item: [a,b,c] → move_item(0,2) → [b,c,a] → move_item(2,0) → [c,a,b]
+    /// 範囲外は変化なし
+    #[test]
+    fn test_move_item() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
+
+        store.save("pl", &[
+            PathBuf::from("/a"),
+            PathBuf::from("/b"),
+            PathBuf::from("/c"),
+        ]).unwrap();
+
+        // from=0 の "/a" を to=2 へ → [b, c, a]
+        store.move_item("pl", 0, 2).unwrap();
+        let loaded = store.load("pl").unwrap();
+        assert_eq!(loaded, vec![PathBuf::from("/b"), PathBuf::from("/c"), PathBuf::from("/a")]);
+
+        // from=2 の "/a" を to=0 へ → [a, b, c]
+        store.move_item("pl", 2, 0).unwrap();
+        let loaded = store.load("pl").unwrap();
+        assert_eq!(loaded, vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]);
+
+        // 範囲外 (from=99) は何もしない
+        store.move_item("pl", 99, 0).unwrap();
+        let loaded = store.load("pl").unwrap();
+        assert_eq!(loaded, vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]);
     }
 }
