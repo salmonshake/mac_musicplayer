@@ -49,7 +49,8 @@ fn status_text(state: &AppState) -> String {
         Nav::AllTracks
         | Nav::Album(_)
         | Nav::Artist(_)
-        | Nav::Genre(_) => {
+        | Nav::Genre(_)
+        | Nav::Playlist(_) => {
             count(state.tracks.len(), "track", "tracks")
         }
         Nav::Albums => {

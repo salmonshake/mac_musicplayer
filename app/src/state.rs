@@ -30,6 +30,9 @@ pub enum Nav {
     Genres,
     /// One genre.
     Genre(String),
+    /// One playlist (name).
+    #[expect(dead_code, reason = "constructed by the sidebar in 8.7")]
+    Playlist(String),
 }
 
 /// Whole-application state shared by the UI.
@@ -72,7 +75,6 @@ pub struct AppState {
     /// プレイリストファイルのストア。ディレクトリ作成に失敗した場合は None。
     pub playlist_store: Option<PlaylistStore>,
     /// Nav::Playlist 用: `tracks` の各行がプレイリストファイル上の何番目か。
-    #[expect(dead_code)]
     pub playlist_positions: Vec<usize>,
     scan: Option<ScanHandle>,
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
@@ -161,6 +163,7 @@ impl AppState {
             }
         }
         let search = self.search_opt();
+        self.playlist_positions.clear();
         let filter = match self.nav.clone() {
             Nav::AllTracks => Some(TrackFilter {
                 search,
@@ -180,6 +183,10 @@ impl AppState {
                 search,
                 ..Default::default()
             }),
+            Nav::Playlist(name) => {
+                self.load_playlist_tracks(&name);
+                return;
+            }
             Nav::Albums => {
                 match self.lib.list_albums(search.as_deref()) {
                     Ok(v) => self.albums = v,
@@ -238,6 +245,36 @@ impl AppState {
         if self.search != s {
             self.search = s;
             self.search_changed_at = Some(Instant::now());
+        }
+    }
+
+    /// Loads playlist tracks from `playlist_store` and resolves paths to `TrackRow`.
+    fn load_playlist_tracks(&mut self, name: &str) {
+        let paths = match self
+            .playlist_store
+            .as_ref()
+            .map(|st| st.load(name))
+        {
+            Some(Ok(paths)) => paths,
+            Some(Err(e)) => {
+                self.status = format!("Load error: {e}");
+                self.tracks.clear();
+                return;
+            }
+            None => {
+                self.tracks.clear();
+                return;
+            }
+        };
+        match self.lib.tracks_by_paths(&paths) {
+            Ok(rows) => {
+                self.playlist_positions = rows.iter().map(|(i, _)| *i).collect();
+                self.tracks = rows.into_iter().map(|(_, t)| t).collect();
+            }
+            Err(e) => {
+                self.status = format!("Load error: {e}");
+                self.tracks.clear();
+            }
         }
     }
 

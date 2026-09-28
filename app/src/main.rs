@@ -80,7 +80,8 @@ impl eframe::App for MmpApp {
                     Ok(s) => match s.nav.clone() {
                         state::Nav::AllTracks
                         | state::Nav::Artist(_)
-                        | state::Nav::Genre(_) => {
+                        | state::Nav::Genre(_)
+                        | state::Nav::Playlist(_) => {
                             ui::tracks::show(ui, s, true);
                         }
                     state::Nav::Albums => {
