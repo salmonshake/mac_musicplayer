@@ -428,7 +428,6 @@ impl AppState {
     }
 
     /// Adds tracks to an existing playlist.
-    #[expect(dead_code, reason = "used by the track context menu in 8.8")]
     pub fn add_to_playlist(&mut self, name: &str, paths: &[PathBuf]) {
         let store = match &self.playlist_store {
             Some(st) => st,
@@ -452,7 +451,6 @@ impl AppState {
     }
 
     /// Removes a track from its playlist at the given display index.
-    #[expect(dead_code, reason = "used by the track context menu in 8.8")]
     pub fn remove_from_playlist(&mut self, track_index: usize) {
         let name = match &self.nav {
             Nav::Playlist(name) => name.clone(),
@@ -482,7 +480,6 @@ impl AppState {
     }
 
     /// Moves a track up or down within its playlist.
-    #[expect(dead_code, reason = "used by the track context menu in 8.8")]
     pub fn move_in_playlist(&mut self, track_index: usize, up: bool) {
         let name = match &self.nav {
             Nav::Playlist(name) => name.clone(),

@@ -6,6 +6,18 @@ use egui_extras::{Column, TableBuilder};
 use crate::state::AppState;
 use crate::style::{HEADER_HEIGHT, ROW_HEIGHT};
 
+/// Private enum for track-list context-menu actions.
+enum RowAction {
+    /// Add the track at index `i` to the playlist named `name`.
+    AddTo(String, usize),
+    /// Remove the track at index `i` from its playlist.
+    Remove(usize),
+    /// Move the track at index `i` up one position.
+    MoveUp(usize),
+    /// Move the track at index `i` down one position.
+    MoveDown(usize),
+}
+
 /// Format milliseconds as `m:ss`.
 pub fn format_duration(ms: u64) -> String {
     let s = ms / 1000;
@@ -17,9 +29,16 @@ pub fn format_duration(ms: u64) -> String {
 /// When `show_album_column` is false (album detail view), the Album column is
 /// omitted from both the header and the rows.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
+    let playlists: Vec<String> = state.playlists.clone();
+    let in_playlist = matches!(state.nav, crate::state::Nav::Playlist(_));
+    let mut action: Option<RowAction> = None;
     if state.tracks.is_empty() {
         ui.centered_and_justified(|ui| {
-            ui.label("No tracks yet. Add a music folder from the sidebar.");
+            if in_playlist {
+                ui.label("This playlist is empty. Right-click a track to add it.");
+            } else {
+                ui.label("No tracks yet. Add a music folder from the sidebar.");
+            }
         });
         return;
     }
@@ -131,6 +150,35 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
             if row.response().double_clicked() {
                 double_clicked = Some(i);
             }
+            // Context menu: right-click actions (Add to Playlist / Remove / Move).
+            row.response().context_menu(|ui| {
+                ui.menu_button("Add to Playlist", |ui| {
+                    if playlists.is_empty() {
+                        ui.label(egui::RichText::new("No playlists").weak());
+                    }
+                    for name in &playlists {
+                        if ui.button(name).clicked() {
+                            action = Some(RowAction::AddTo(name.clone(), i));
+                            ui.close();
+                        }
+                    }
+                });
+                if in_playlist {
+                    ui.separator();
+                    if ui.button("Remove from Playlist").clicked() {
+                        action = Some(RowAction::Remove(i));
+                        ui.close();
+                    }
+                    if ui.button("Move Up").clicked() {
+                        action = Some(RowAction::MoveUp(i));
+                        ui.close();
+                    }
+                    if ui.button("Move Down").clicked() {
+                        action = Some(RowAction::MoveDown(i));
+                        ui.close();
+                    }
+                }
+            });
         });
     });
     if let Some(i) = clicked {
@@ -140,6 +188,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
     if let Some(i) = double_clicked {
         state.play_from(i);
         state.selected_track = Some(i);
+    }
+    // Apply context-menu action.
+    if let Some(action) = action {
+        match action {
+            RowAction::AddTo(name, i) => {
+                if let Some(p) = state.tracks.get(i).map(|t| t.path.clone()) {
+                    state.add_to_playlist(&name, &[p]);
+                }
+            }
+            RowAction::Remove(i) => state.remove_from_playlist(i),
+            RowAction::MoveUp(i) => state.move_in_playlist(i, true),
+            RowAction::MoveDown(i) => state.move_in_playlist(i, false),
+        }
     }
 }
 
