@@ -660,3 +660,99 @@
   - 件数の単複: `pub fn count(n: usize, one: &str, many: &str) -> String`（tracks.rs に置く。`1 track` / `2 tracks`）を album 詳細見出しとツールバーで使う
   - ツールバーの件数: Nav::Album / Artist / Genre / AllTracks は `{n} tracks`、Albums は albums、Artists は artists、Genres は genres
 - 完了条件: build・clippy・test 成功（count のテスト: 0 tracks / 1 track / 2 tracks）
+
+---
+
+## 段階7: プレイヤーバー・シーク・キュー / シャッフル / リピート
+
+方針:
+- 再生エンジンを core に新設（`core/src/player/`）。専用スレッドが デコーダ → リング → OutputUnit を回し、UI は `Player` ハンドル経由でコマンドを送る。状態は `Arc<Mutex<PlayerStatus>>`（エンジンスレッドと UI スレッドだけが触る。**オーディオコールバックは触らない**）
+- オーディオコールバックが使う共有値はすべてアトミック（`RenderShared { volume_bits: AtomicU32, flush: AtomicBool, frames_played: AtomicU64 }`）。ロック・アロケーション・I/O なし
+  - 音量: コールバック内でサンプルに乗算（段階12 のビットパーフェクトでは 1.0 固定）
+  - flush: シーク・曲変更時にエンジンが立てる。コールバックは `consumer.slots()` 分を `read_chunk(n)?.commit_all()` で捨てて無音を出し、フラグを下ろす
+  - frames_played: コールバックが出力したフレーム数（無音も含まない＝リングから取れた分だけ）を加算。エンジンは曲の境界フレームを記録して「現在曲の再生位置」を計算する
+- ギャップレスは段階3 と同じく、同じ形式なら同じリングへ続けて書く。形式が変わるときだけ出力を作り直す
+- キュー: 元の並び `items` と再生順 `order`（シャッフル時は現在曲を先頭に固定して残りを並べ替え。乱数は依存を増やさず xorshift64）。リピート `Off / All / One`
+- 前の曲: 再生位置が 3 秒超なら曲頭へ、以下なら前の曲へ
+- UI: モック下部のプレイヤーバー（左: 曲名/アーティスト、中央: shuffle / prev / play-pause / next / repeat と経過・シークバー・全体時間、右: 音量 % とスライダー）。再生中の再描画は 250ms 間隔（spec の 250ms〜1s）。曲行ダブルクリックで「表示中の一覧を先頭からキューに入れ、その曲から再生」。再生中の行に `PLAYING` バッジ
+- アイコン: egui 同梱の絵文字フォントの記号（⏮ ⏯ ⏭ 🔀 🔁 🔂 🔊 等）。ヒラギノに無い字形は自動で egui 既定フォントにフォールバックする（表示を スクショで確認）
+
+参照した API:
+- `ExtAudioFileSeek(ExtAudioFileRef, i64 /*フレーム*/) -> OSStatus`（クライアント形式のフレーム単位）
+- symphonia 0.6.1: `format.seek(SeekMode::Accurate, SeekTo::Timestamp { ts: Timestamp::new(i64), track_id }) -> Result<SeekedTo { required_ts, actual_ts, .. }>`（Accurate は必ず手前に着地 → `required - actual` フレームを読み捨てる）、`decoder.reset()`。Vorbis の ts はトラックの time_base（通常 1/sample_rate）単位 — 実装時に `track.time_base` を確認
+- rtrb: `consumer.slots()`, `consumer.read_chunk(n) -> Result<ReadChunk>`, `chunk.commit_all()`
+
+### Task 7.1 デコーダのシーク
+- ファイル: `core/src/coreaudio/ext_audio_file.rs`, `core/src/decode/{mod.rs, ext.rs, vorbis.rs}`, `core/tests/seek.rs`
+- 内容: `ExtAudioFile::seek(&mut self, frame: i64) -> Result<()>`。`Decoder` トレイトに `fn seek(&mut self, frame: u64) -> Result<(), DecodeError>`（範囲外は末尾に丸める）。Vorbis は Accurate シーク後に不足分を読み捨て、`pending` を空にする
+- 完了条件: テスト — 3 秒の FLAC / MP3 / AAC / Ogg で 1.5 秒（66150 フレーム）へシーク後、残り全部を読んだフレーム数が 66150（完全一致）。範囲外（10 秒）へのシークで panic せず、以後 read が 0
+
+### Task 7.2 OutputUnit の音量・flush・再生フレーム数
+- ファイル: `core/src/coreaudio/output.rs`, `core/tests/output_unit.rs`
+- 内容: `pub struct RenderShared { volume_bits: AtomicU32, flush: AtomicBool, frames_played: AtomicU64 }`（`pub fn volume()/set_volume(f32)/request_flush()/frames_played()`）を `Arc` で RenderState と共有。`OutputUnit::shared(&self) -> Arc<RenderShared>`。コールバック本体を `fn render_into(out: &mut [f32], channels: usize, consumer: &mut Consumer<f32>, shared: &RenderShared)` に切り出し、CoreAudio 無しでテスト可能にする
+- 完了条件: `render_into` の単体テスト — 音量 0.5 で値が半分、flush で残りが捨てられ出力が無音・フラグが下りる、frames_played がリングから取れたフレーム数だけ増える（不足分の無音は数えない）。全テスト・clippy 成功
+
+### Task 7.3 キュー（純粋ロジック）
+- ファイル: `core/src/player/mod.rs`, `core/src/player/queue.rs`（+ `lib.rs`）
+- 型:
+  ```rust
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)] pub enum RepeatMode { #[default] Off, All, One }
+  pub struct Queue { items: Vec<PathBuf>, order: Vec<usize>, pos: usize, shuffle: bool, repeat: RepeatMode, rng: u64 }
+  impl Queue {
+      pub fn new(items: Vec<PathBuf>, start: usize, shuffle: bool, repeat: RepeatMode, seed: u64) -> Self;
+      pub fn current(&self) -> Option<(usize /*items の添字*/, &Path)>;
+      /// 曲の自然終了時。One は同じ曲、All は末尾→先頭、Off は末尾で None
+      pub fn advance_on_end(&mut self) -> Option<(usize, &Path)>;
+      /// ユーザー操作の次へ。One でも次の曲へ進む（All/One は末尾→先頭、Off は末尾で None）
+      pub fn next(&mut self) -> Option<(usize, &Path)>;
+      pub fn prev(&mut self) -> Option<(usize, &Path)>;       // 先頭では先頭のまま
+      pub fn peek_after_current(&self) -> Option<(usize, &Path)>;  // ギャップレス先読み用（advance_on_end と同じ規則、状態は変えない）
+      pub fn jump_to_item(&mut self, item: usize) -> Option<(usize, &Path)>;
+      pub fn set_shuffle(&mut self, on: bool);  // 現在曲は維持
+      pub fn set_repeat(&mut self, r: RepeatMode);
+      pub fn items(&self) -> &[PathBuf]; pub fn upcoming(&self) -> Vec<usize>;  // 現在曲の次からの items 添字
+  }
+  ```
+- 完了条件: テスト — 順送り・戻り・末尾の各リピートの挙動、シャッフルで全曲 1 回ずつ・現在曲が先頭・同じ seed で同じ順、シャッフル解除で元の並びの現在位置に戻る、peek と advance の一致、空キュー
+
+### Task 7.4 再生エンジン
+- ファイル: `core/src/player/engine.rs`, `core/tests/player.rs`
+- 型:
+  ```rust
+  #[derive(Debug, Clone, Copy, PartialEq, Eq)] pub enum PlayState { Stopped, Playing, Paused }
+  #[derive(Debug, Clone)] pub struct PlayerStatus { pub state: PlayState, pub current_item: Option<usize>, pub path: Option<PathBuf>,
+      pub position_ms: u64, pub duration_ms: u64, pub volume: f32, pub shuffle: bool, pub repeat: RepeatMode, pub error: Option<String>, pub upcoming: Vec<usize> }
+  pub struct Player { tx: Sender<Command>, status: Arc<Mutex<PlayerStatus>>, join: Option<JoinHandle<()>> }
+  impl Player {
+      pub fn new(device_uid: Option<String>) -> Self;
+      pub fn play_queue(&self, items: Vec<PathBuf>, start: usize); pub fn toggle_pause(&self); pub fn stop(&self);
+      pub fn next(&self); pub fn prev(&self); pub fn seek_ms(&self, ms: u64); pub fn set_volume(&self, v: f32);
+      pub fn set_shuffle(&self, on: bool); pub fn set_repeat(&self, r: RepeatMode); pub fn jump_to_item(&self, i: usize);
+      pub fn status(&self) -> PlayerStatus;   // Mutex が poison なら既定値
+  }
+  impl Drop for Player  // Quit コマンド送信 → join
+  ```
+  - エンジンは `recv_timeout(10ms)` でコマンドを受けつつ、リングに空きがあればデコードして書く。曲の終わりで `peek_after_current` の曲を開いて続けて書く（形式が同じなら）。境界フレームを記録し、`frames_played` が境界を越えたら `advance_on_end` して status を更新
+  - Pause は `OutputUnit::stop`、Resume は `start`。シーク・next・prev・jump・play_queue は flush してから新しい位置でデコードし直す
+  - 開けない曲はスキップして status.error に記録（落ちない）。デバイス関連は段階4 の Session と同じ扱い（指定デバイス消失でデフォルトに作り直し）
+- 完了条件: テスト（音量 0 で実行）— gap_a/gap_b を play_queue → 1 秒以内に Playing、position が進む、seek_ms(2000) 後の position が 2000±300、next で current_item が 1、両曲終了後 Stopped、存在しないパスを含むキューでも落ちず次の曲へ進む。全テスト・clippy 成功
+
+### Task 7.5 アプリ状態への組み込み
+- ファイル: `app/src/state.rs`
+- 内容: `AppState` に `pub player: Player`、`pub now: PlayerStatus`（poll で毎回コピー）、`pub queue_items: Vec<TrackRow>`（キューに入れた時点の一覧）。`pub fn play_from(&mut self, index: usize)`（表示中の tracks をキューに入れてその曲から）。再生中は `request_repaint_after(250ms)`
+- 完了条件: build・clippy 成功
+
+### Task 7.6 プレイヤーバー
+- ファイル: `app/src/ui/player_bar.rs`, `app/src/main.rs`
+- 内容: `Panel::bottom("player")`（高さ 84、余白 16）。左: 44x44 の角丸プレースホルダ（アートワークは段階10）＋曲名（強調）とアーティスト（weak）。中央: `🔀 ⏮ ▶/⏸ ⏭ 🔁/🔂` のボタン（シャッフル・リピートは有効時に selection 色）、その下に `経過 m:ss` ─ シークバー（`egui::Slider` ではなく自前の横長 `ProgressBar` + ドラッグ/クリックで seek）─ `全体 m:ss`。右: `{n}%` と音量スライダー（0〜100）。何も再生していないときはボタンを無効化
+- 完了条件: build・clippy 成功。スクショで配置を確認
+
+### Task 7.7 曲一覧からの再生・再生中表示・キーボード
+- ファイル: `app/src/ui/tracks.rs`, `app/src/main.rs`
+- 内容: 行ダブルクリックで `state.play_from(i)`。再生中の曲（`now.path` と行の path が一致）の行を selection 色で塗り、タイトルの後ろに小さな `PLAYING` バッジ。Space で再生/一時停止（テキスト入力中は無効）、⌘→ / ⌘← で次/前
+- 完了条件: build・clippy 成功。実際に再生・一時停止・シーク・次/前・シャッフル・リピートが動く（指揮役/ユーザーが確認）
+
+### Task 7.8 キューの表示
+- ファイル: `app/src/ui/queue.rs`, `app/src/main.rs`
+- 内容: プレイヤーバー右端の `☰` で右側パネル（幅 300）を開閉。`Up Next` 見出しと `now.upcoming` の曲（タイトル / アーティスト）。クリックでその曲へジャンプ
+- 完了条件: build・clippy 成功
