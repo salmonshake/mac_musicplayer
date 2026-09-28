@@ -13,6 +13,25 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
+/// Returns a playlist name that does not appear in `existing`.
+///
+/// Tries `"New Playlist"` first, then appends an incrementing number
+/// (e.g. `"New Playlist 2"`, `"New Playlist 3"`) until a free slot is found.
+pub fn unique_playlist_name(existing: &[String]) -> String {
+    let base = "New Playlist";
+    if !existing.iter().any(|e| e == base) {
+        return base.to_owned();
+    }
+    let mut n = 2usize;
+    loop {
+        let candidate = format!("{base} {n}");
+        if !existing.iter().any(|e| e == &candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 /// Sidebar navigation target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Nav {
@@ -31,7 +50,6 @@ pub enum Nav {
     /// One genre.
     Genre(String),
     /// One playlist (name).
-    #[expect(dead_code, reason = "constructed by the sidebar in 8.7")]
     Playlist(String),
 }
 
@@ -317,6 +335,82 @@ impl AppState {
         self.now.current_item.and_then(|i| self.queue_items.get(i))
     }
 
+    /// Creates a new empty playlist, navigates to it.
+    ///
+    /// Returns `Some(name)` on success, `None` when `playlist_store` is unavailable.
+    #[expect(dead_code, reason = "used by the sidebar in 8.7")]
+    #[allow(clippy::question_mark)]
+    pub fn create_playlist(&mut self) -> Option<String> {
+        let store = match &self.playlist_store {
+            Some(st) => st,
+            None => return None,
+        };
+        let name = unique_playlist_name(&self.playlists);
+        match store.create(&name) {
+            Ok(()) => {
+                self.reload_playlists();
+                self.set_nav(Nav::Playlist(name.clone()));
+                Some(name)
+            }
+            Err(e) => {
+                self.status = format!("Could not create playlist: {e}");
+                None
+            }
+        }
+    }
+
+    /// Renames an existing playlist.
+    ///
+    /// Returns `true` on success, `false` on failure.
+    #[expect(dead_code, reason = "used by the sidebar in 8.7")]
+    pub fn rename_playlist(&mut self, old: &str, new: &str) -> bool {
+        let store = match &self.playlist_store {
+            Some(st) => st,
+            None => {
+                self.status = "Playlists unavailable".to_owned();
+                return false;
+            }
+        };
+        let result = store.rename(old, new);
+        match result {
+            Ok(()) => {
+                self.reload_playlists();
+                if self.nav == Nav::Playlist(old.to_string()) {
+                    self.nav = Nav::Playlist(new.to_string());
+                }
+                true
+            }
+            Err(e) => {
+                self.status = format!("Could not rename playlist: {e}");
+                false
+            }
+        }
+    }
+
+    /// Deletes a playlist by name.
+    #[expect(dead_code, reason = "used by the sidebar in 8.7")]
+    pub fn delete_playlist(&mut self, name: &str) {
+        let store = match &self.playlist_store {
+            Some(st) => st,
+            None => {
+                self.status = "Playlists unavailable".to_owned();
+                return;
+            }
+        };
+        let result = store.delete(name);
+        match result {
+            Ok(()) => {
+                self.reload_playlists();
+                if self.nav == Nav::Playlist(name.to_string()) {
+                    self.set_nav(Nav::AllTracks);
+                }
+            }
+            Err(e) => {
+                self.status = format!("Could not delete playlist: {e}");
+            }
+        }
+    }
+
     /// Handles scan/watch events and the delayed search; call every frame.
     pub fn poll(&mut self, ctx: &egui::Context) {
         let mut changed = false;
@@ -387,5 +481,37 @@ impl AppState {
         if self.now.state == PlayState::Playing {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unique_playlist_name;
+
+    #[test]
+    fn test_unique_playlist_name_empty() {
+        let result = unique_playlist_name(&[]);
+        assert_eq!(result, "New Playlist");
+    }
+
+    #[test]
+    fn test_unique_playlist_name_one_taken() {
+        let result = unique_playlist_name(&["New Playlist".to_owned()]);
+        assert_eq!(result, "New Playlist 2");
+    }
+
+    #[test]
+    fn test_unique_playlist_name_two_taken() {
+        let result = unique_playlist_name(&[
+            "New Playlist".to_owned(),
+            "New Playlist 2".to_owned(),
+        ]);
+        assert_eq!(result, "New Playlist 3");
+    }
+
+    #[test]
+    fn test_unique_playlist_name_number_taken() {
+        let result = unique_playlist_name(&["New Playlist 2".to_owned()]);
+        assert_eq!(result, "New Playlist");
     }
 }
