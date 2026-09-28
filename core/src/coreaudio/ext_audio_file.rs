@@ -3,7 +3,7 @@ use std::ptr::{NonNull, null_mut};
 use std::ffi::c_void;
 use objc2_audio_toolbox::{
     ExtAudioFileDispose, ExtAudioFileGetProperty, ExtAudioFileOpenURL, ExtAudioFileRead,
-    ExtAudioFileSetProperty, ExtAudioFileRef, kExtAudioFileProperty_ClientDataFormat,
+    ExtAudioFileSeek, ExtAudioFileSetProperty, ExtAudioFileRef, kExtAudioFileProperty_ClientDataFormat,
     kExtAudioFileProperty_FileDataFormat, kExtAudioFileProperty_FileLengthFrames,
     kExtAudioFileProperty_AudioFile, kAudioFilePropertyFormatList,
     AudioFileID, AudioFileGetPropertyInfo, AudioFileGetProperty,
@@ -223,6 +223,18 @@ impl ExtAudioFile {
         }
 
         Ok(frames_read as usize)
+    }
+
+    /// Seeks to the given client-format frame.
+    pub fn seek(&mut self, frame: i64) -> Result<()> {
+        unsafe {
+            // SAFETY: ExtAudioFileSeek is safe with a valid raw pointer.
+            check(
+                ExtAudioFileSeek(self.raw, frame),
+                "ExtAudioFileSeek",
+            )?;
+        }
+        Ok(())
     }
 }
 

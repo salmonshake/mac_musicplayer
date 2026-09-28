@@ -12,6 +12,9 @@ pub trait Decoder: Send {
     /// f32 インターリーブ形式で、最大 buf.len()/channels フレームを読み込む。
     /// 戻り値は読み込んだフレーム数。0 は EOF を示す。
     fn read(&mut self, buf: &mut [f32]) -> Result<usize, DecodeError>;
+    /// 指定されたフレーム位置にシークする。
+    /// 範囲外のフレームが指定された場合は末尾にクリンプする。
+    fn seek(&mut self, frame: u64) -> Result<(), DecodeError>;
 }
 
 #[derive(Debug, thiserror::Error)]
