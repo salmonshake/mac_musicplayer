@@ -1,14 +1,16 @@
 //! OS media keys / Now Playing bridge (souvlaki).
 
-use souvlaki::{MediaControlEvent, SeekDirection};
+use eframe::egui;
+use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig, SeekDirection};
+use std::sync::mpsc::{self, Receiver};
 
 /// Seek step for Seek(Forward/Backward) events.
-#[allow(dead_code, reason = "used in 9.4")]
+#[allow(dead_code)]
 const SEEK_STEP_MS: u64 = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code, reason = "used in 9.4")]
-enum MediaAction {
+#[allow(dead_code)]
+pub enum MediaAction {
     Play,
     Pause,
     Toggle,
@@ -22,8 +24,8 @@ enum MediaAction {
 ///
 /// `position_ms` is the current playback position in milliseconds.
 /// `duration_ms` is the total track duration in milliseconds (0 if unknown).
-#[allow(dead_code, reason = "used in 9.4")]
-fn media_action(
+#[allow(dead_code)]
+pub fn media_action(
     ev: &MediaControlEvent,
     position_ms: u64,
     duration_ms: u64,
@@ -64,6 +66,37 @@ fn media_action(
         | MediaControlEvent::Raise
         | MediaControlEvent::Quit => return None,
     })
+}
+
+/// Receives OS media-key / Now Playing events and publishes playback info.
+#[allow(dead_code)]
+pub struct MediaKeys {
+    controls: MediaControls,
+    rx: Receiver<MediaControlEvent>,
+}
+
+#[allow(dead_code)]
+impl MediaKeys {
+    /// Registers with the OS. Returns None if the platform refuses.
+    pub fn new(ctx: egui::Context) -> Option<Self> {
+        let config = PlatformConfig {
+            display_name: "MacMusicPlay",
+            dbus_name: "macmusicplay",
+            hwnd: None,
+        };
+        let mut controls = MediaControls::new(config).ok()?;
+        let (tx, rx) = mpsc::channel();
+        controls.attach(move |ev| {
+            let _ = tx.send(ev);
+            ctx.request_repaint();
+        }).ok()?;
+        Some(Self { controls, rx })
+    }
+
+    /// Events received since the last call (non-blocking).
+    pub fn poll_events(&self) -> Vec<MediaControlEvent> {
+        self.rx.try_iter().collect()
+    }
 }
 
 #[cfg(test)]
