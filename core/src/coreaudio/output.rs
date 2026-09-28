@@ -1,5 +1,7 @@
 use std::ptr::NonNull;
 use std::ffi::c_void;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use objc2_audio_toolbox::{
     AudioComponentDescription, AudioComponentFindNext, AudioComponentInstanceNew, AudioComponentInstanceDispose,
     AudioUnit, AudioUnitInitialize, AudioUnitUninitialize, AudioUnitSetProperty, AudioOutputUnitStart,
@@ -17,13 +19,68 @@ use crate::coreaudio::error::{check, CoreAudioError, Result};
 use crate::coreaudio::ext_audio_file::StreamInfo;
 use rtrb::Consumer;
 
+/// オーディオコールバックと共有するアトミック値。
+///
+/// 音量、flush 状態、再生フレーム数をロック・アロケーションなしで更新できる。
+pub struct RenderShared {
+    volume_bits: AtomicU32,
+    flush: AtomicBool,
+    frames_played: AtomicU64,
+}
+
+impl RenderShared {
+    /// 新規作成。音量は 1.0、flush なし、フレーム数 0。
+    pub fn new() -> Self {
+        Self {
+            volume_bits: AtomicU32::new(1.0f32.to_bits()),
+            flush: AtomicBool::new(false),
+            frames_played: AtomicU64::new(0),
+        }
+    }
+
+    /// 現在の音量 (0.0 〜 1.0)。
+    pub fn volume(&self) -> f32 {
+        f32::from_bits(self.volume_bits.load(Ordering::Relaxed))
+    }
+
+    /// 音量を設定。0.0 未満は 0.0、1.0 超は 1.0 に丸める。
+    pub fn set_volume(&self, v: f32) {
+        self.volume_bits.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    /// フラッシュを要求する。次のコールバックでリングの残りデータを捨てて無音を出力し、
+    /// 捨て終わると `flush_pending` は false になる。
+    pub fn request_flush(&self) {
+        self.flush.store(true, Ordering::Release);
+    }
+
+    /// フラッシュが保留中か（リングにデータが残っている間 true）。
+    pub fn flush_pending(&self) -> bool {
+        self.flush.load(Ordering::Acquire)
+    }
+
+    /// リングから取り出して出力したフレーム数の累計。
+    pub fn frames_played(&self) -> u64 {
+        self.frames_played.load(Ordering::Relaxed)
+    }
+}
+
+impl Default for RenderShared {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct RenderState {
     consumer: Consumer<f32>,
+    shared: Arc<RenderShared>,
+    channels: usize,
 }
 
 pub struct OutputUnit {
     unit: AudioUnit,
     state: *mut RenderState,
+    shared: Arc<RenderShared>,
 }
 
 impl OutputUnit {
@@ -91,7 +148,13 @@ impl OutputUnit {
             }
         }
 
-        let state = Box::into_raw(Box::new(RenderState { consumer }));
+        let shared = Arc::new(RenderShared::new());
+        let channels = info.channels as usize;
+        let state = Box::into_raw(Box::new(RenderState {
+            consumer,
+            shared: Arc::clone(&shared),
+            channels,
+        }));
 
         if let Err(e) = configure(unit, info, state) {
             // SAFETY: unit and state are valid pointers.
@@ -102,7 +165,12 @@ impl OutputUnit {
             return Err(e);
         }
 
-        Ok(Self { unit, state })
+        Ok(Self { unit, state, shared })
+    }
+
+    /// コールバックと共有する `RenderShared` のコピーを返す。
+    pub fn shared(&self) -> Arc<RenderShared> {
+        Arc::clone(&self.shared)
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -179,6 +247,39 @@ fn configure(unit: AudioUnit, info: &StreamInfo, state: *mut RenderState) -> Res
     Ok(())
 }
 
+/// オーディオコールバックの処理本体（CoreAudio なしでテストできるよう分離）。
+///
+/// この関数内ではロック・アロケーション・I/O・print は行わない。
+pub fn render_into(
+    out: &mut [f32],
+    channels: usize,
+    consumer: &mut Consumer<f32>,
+    shared: &RenderShared,
+) {
+    if shared.flush.load(Ordering::Acquire) {
+        let n = consumer.slots();
+        if let Ok(chunk) = consumer.read_chunk(n) {
+            chunk.commit_all();
+        }
+        shared.flush.store(false, Ordering::Release);
+        out.fill(0.0);
+        return;
+    }
+
+    let (filled, rest) = consumer.pop_partial_slice(out);
+    let got = filled.len();
+    let vol = shared.volume();
+    if vol != 1.0 {
+        for s in filled.iter_mut() {
+            *s *= vol;
+        }
+    }
+    rest.fill(0.0);
+    if let Some(frames) = got.checked_div(channels) {
+        shared.frames_played.fetch_add(frames as u64, Ordering::Relaxed);
+    }
+}
+
 unsafe extern "C-unwind" fn render_callback(
     in_ref_con: NonNull<c_void>,
     _flags: NonNull<AudioUnitRenderActionFlags>,
@@ -215,8 +316,7 @@ unsafe extern "C-unwind" fn render_callback(
             std::slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), sample_len)
         };
 
-        let (_filled, rest) = state.consumer.pop_partial_slice(slice);
-        rest.fill(0.0);
+        render_into(slice, state.channels, &mut state.consumer, &state.shared);
     }
 
     0
