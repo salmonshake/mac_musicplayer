@@ -355,7 +355,6 @@ impl AppState {
     /// Creates a new empty playlist, navigates to it.
     ///
     /// Returns `Some(name)` on success, `None` when `playlist_store` is unavailable.
-    #[expect(dead_code, reason = "used by the sidebar in 8.7")]
     pub fn create_playlist(&mut self) -> Option<String> {
         let store = self.playlist_store.as_ref()?;
         let name = unique_playlist_name(&self.playlists);
