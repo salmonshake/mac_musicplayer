@@ -799,5 +799,9 @@
 - **8.4** `core/src/library/query.rs`: `pub fn tracks_by_paths(&self, paths: &[PathBuf]) -> Result<Vec<(usize, TrackRow)>, LibraryError>`（戻り値の usize は paths 上の位置。DB に無いものは省く。順序はpaths順）。テスト
 - **8.5** `core/src/paths.rs`: `pub fn playlists_dir() -> io::Result<PathBuf>`（data_dir/playlists）。テスト（data_dir_in と同様）
 - **8.6** `app/src/state.rs`: `pub playlists: Vec<String>`、`playlist_store: Option<PlaylistStore>`、`Nav::Playlist(String)`、`playlist_positions: Vec<usize>`（表示中 tracks[i] のプレイリスト上の位置）、`reload` で Nav::Playlist の曲を読む、`create_playlist / rename_playlist / delete_playlist / add_to_playlist(name, &[PathBuf]) / remove_from_playlist(track_index) / move_in_playlist(track_index, up: bool)`（失敗は status に）
+  - **8.6a** state.rs: フィールド `playlists / playlist_store / playlist_positions` 追加、`open()` で `PlaylistStore::new(paths::playlists_dir()?)`（失敗は status に出して None）、`fn reload_playlists(&mut self)`（store.list() → playlists）
+  - **8.6b** state.rs + main.rs + toolbar.rs: `Nav::Playlist(String)`、reload の分岐（store.load → lib.tracks_by_paths → tracks と playlist_positions）、main.rs / toolbar.rs の match に Playlist を曲一覧として追加
+  - **8.6c** state.rs: `create_playlist() -> Option<String>`（New Playlist / New Playlist 2… の空き名で作成し選択）、`rename_playlist(old,new)`、`delete_playlist(name)`
+  - **8.6d** state.rs: `add_to_playlist(name, &[PathBuf])`、`remove_from_playlist(track_index)`、`move_in_playlist(track_index, up)`
 - **8.7** `app/src/ui/sidebar.rs`: PLAYLISTS セクション（LIBRARY と GENRES の間）。`+` で「New Playlist」（重複しない名前 `New Playlist`, `New Playlist 2`…で作成して即選択）、右クリック Rename（インラインの TextEdit）/ Delete
 - **8.8** `app/src/ui/tracks.rs`: 行の右クリックメニュー（`Add to Playlist ▸`、Nav::Playlist のときは `Remove from Playlist` / `Move Up` / `Move Down`）
