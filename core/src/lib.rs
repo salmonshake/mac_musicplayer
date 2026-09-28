@@ -6,3 +6,4 @@ pub mod library;
 pub mod paths;
 pub mod playback;
 pub mod player;
+pub mod playlist;
