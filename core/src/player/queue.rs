@@ -19,7 +19,6 @@ pub struct Queue {
     order: Vec<usize>,
     pos: usize,
     shuffle: bool,
-    #[expect(dead_code)]
     repeat: RepeatMode,
     rng: u64,
 }
@@ -77,14 +76,17 @@ impl Queue {
     }
 
     /// Advance to the next track.
-    /// Returns None at the end (position unchanged).
+    ///
+    /// User-initiated next: always advances to the next position in `order`
+    /// (wrapping for All/One, None for Off at end).
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<(usize, &Path)> {
-        if self.pos + 1 >= self.order.len() {
-            return None;
+        if let Some(p) = self.index_after(false) {
+            self.pos = p;
+            self.current()
+        } else {
+            None
         }
-        self.pos += 1;
-        self.current()
     }
 
     /// Go to the previous track.
@@ -126,6 +128,83 @@ impl Queue {
     /// Return whether shuffle is currently enabled.
     pub fn shuffle(&self) -> bool {
         self.shuffle
+    }
+
+    /// Set the repeat mode.
+    pub fn set_repeat(&mut self, r: RepeatMode) {
+        self.repeat = r;
+    }
+
+    /// Return the current repeat mode.
+    pub fn repeat(&self) -> RepeatMode {
+        self.repeat
+    }
+
+    /// Compute the next position index in `order`.
+    ///
+    /// `natural_end` is true when the track ended naturally (vs user-initiated next).
+    /// For One mode at the end, natural_end=true wraps back to `pos`.
+    /// This method does not mutate state.
+    fn index_after(&self, natural_end: bool) -> Option<usize> {
+        let n = self.order.len();
+        if n == 0 {
+            return None;
+        }
+        if natural_end && self.repeat == RepeatMode::One {
+            return Some(self.pos);
+        }
+        if self.pos + 1 < n {
+            return Some(self.pos + 1);
+        }
+        match self.repeat {
+            RepeatMode::All | RepeatMode::One => Some(0),
+            RepeatMode::Off => None,
+        }
+    }
+
+    /// Advance on natural end of the current track.
+    ///
+    /// Returns the next (item index, path) or None at the end (position unchanged).
+    /// Respects repeat mode: One loops to the same track, All wraps to 0, Off stays at end.
+    pub fn advance_on_end(&mut self) -> Option<(usize, &Path)> {
+        if let Some(p) = self.index_after(true) {
+            self.pos = p;
+            self.current()
+        } else {
+            None
+        }
+    }
+
+    /// Peek at the track after the current one without advancing.
+    ///
+    /// Uses the same rules as `advance_on_end` (repeat-aware) but does not
+    /// change the queue position.
+    pub fn peek_after_current(&self) -> Option<(usize, &Path)> {
+        let p = self.index_after(true)?;
+        let i = *self.order.get(p)?;
+        Some((i, self.items.get(i)?.as_path()))
+    }
+
+    /// Jump to a specific item by its index into `items`.
+    ///
+    /// Finds the item's position in `order`, moves `pos` there, and returns
+    /// the current (item index, path). Returns None if the item is not in the queue.
+    pub fn jump_to_item(&mut self, item: usize) -> Option<(usize, &Path)> {
+        let position = self.order.iter().position(|&i| i == item)?;
+        self.pos = position;
+        self.current()
+    }
+
+    /// Return the item indices of tracks after the current one.
+    ///
+    /// Returns indices into `items` (not `order`) from pos+1 onwards.
+    /// Empty slice when at or past the end.
+    pub fn upcoming(&self) -> Vec<usize> {
+        if self.pos + 1 < self.order.len() {
+            self.order[self.pos + 1..].to_vec()
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -251,5 +330,88 @@ mod tests {
         q.set_shuffle(true);
         assert!(q.current().is_none());
         assert!(q.next().is_none());
+    }
+
+    #[test]
+    fn test_repeat_off_advance_at_end() {
+        // 3 tracks, start=2 (last): advance_on_end should return None, current stays at 2
+        let mut q = Queue::new(
+            (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+            2, false, RepeatMode::Off, 42,
+        );
+        assert_eq!(q.current().map(|(i, _)| i), Some(2));
+        assert!(q.advance_on_end().is_none());
+        assert_eq!(q.current().map(|(i, _)| i), Some(2));
+        assert!(q.next().is_none());
+    }
+
+    #[test]
+    fn test_repeat_all_wrap() {
+        // 3 tracks, start=2 (last): advance_on_end wraps to 0, next wraps to 0
+        let mut q = Queue::new(
+            (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+            2, false, RepeatMode::All, 42,
+        );
+        assert_eq!(q.current().map(|(i, _)| i), Some(2));
+        assert_eq!(q.advance_on_end().map(|(i, _)| i), Some(0));
+        assert_eq!(q.current().map(|(i, _)| i), Some(0));
+
+        // Fresh queue: next from end should also wrap
+        let mut q2 = Queue::new(
+            (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+            2, false, RepeatMode::All, 42,
+        );
+        assert_eq!(q2.next().map(|(i, _)| i), Some(0));
+    }
+
+    #[test]
+    fn test_repeat_one() {
+        // 3 tracks, start=1: advance_on_end returns 1, peek_after_current returns 1, next returns 2
+        let mut q = Queue::new(
+            (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+            1, false, RepeatMode::One, 42,
+        );
+        assert_eq!(q.current().map(|(i, _)| i), Some(1));
+        assert_eq!(q.advance_on_end().map(|(i, _)| i), Some(1));
+        assert_eq!(q.peek_after_current().map(|(i, _)| i), Some(1));
+        assert_eq!(q.next().map(|(i, _)| i), Some(2));
+    }
+
+    #[test]
+    fn test_peek_advance_consistency() {
+        // For each repeat mode, peek_after_current's result equals the subsequent advance_on_end.
+        for mode in [RepeatMode::Off, RepeatMode::All, RepeatMode::One] {
+            let mut q = Queue::new(
+                (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+                1, false, mode, 42,
+            );
+            let peeked = q.peek_after_current().map(|(i, _)| i);
+            let advanced = q.advance_on_end().map(|(i, _)| i);
+            assert_eq!(
+                peeked, advanced,
+                "peek_after_current and advance_on_end must match for mode={mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_jump_to_item() {
+        let mut q = Queue::new(
+            (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+            0, false, RepeatMode::Off, 42,
+        );
+        // Jump to valid item 2
+        assert_eq!(q.jump_to_item(2).map(|(i, _)| i), Some(2));
+        // Jump to non-existent item
+        assert!(q.jump_to_item(9).is_none());
+        // upcoming from start=0, 3 tracks: [1, 2]
+        let mut q2 = Queue::new(
+            (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
+            0, false, RepeatMode::Off, 42,
+        );
+        assert_eq!(q2.upcoming(), vec![1, 2]);
+        // After jump to 2, upcoming is empty
+        q2.jump_to_item(2);
+        assert!(q2.upcoming().is_empty());
     }
 }
