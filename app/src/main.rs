@@ -11,12 +11,22 @@ struct MmpApp {
     state: Result<state::AppState, String>,
     shot: Option<screenshot::Screenshotter>,
     pending_album: bool,
+    media: Option<media::MediaKeys>,
 }
 
 impl eframe::App for MmpApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Ok(app_state) = &mut self.state {
             app_state.poll(ctx);
+        }
+        if let (Some(m), Ok(s)) = (&mut self.media, &mut self.state) {
+            for ev in m.poll_events() {
+                let dur = s.now_track().map(|t| t.duration_ms).unwrap_or(0);
+                if let Some(a) = media::media_action(&ev, s.now.position_ms, dur) {
+                    s.apply_media_action(a);
+                }
+            }
+            m.update(&s.now, s.now_track());
         }
         if let (Some(shot), Ok(s)) = (&mut self.shot, &mut self.state) {
             if self.pending_album && !s.scanning {
@@ -42,11 +52,7 @@ impl eframe::App for MmpApp {
                  i.modifiers.command && i.key_pressed(egui::Key::ArrowLeft))
             });
             if space && !typing {
-                if s.now_track().is_some() {
-                    s.player.toggle_pause();
-                } else if let Some(i) = s.selected_track {
-                    s.play_from(i);
-                }
+                s.apply_media_action(media::MediaAction::Toggle);
             }
             if next {
                 s.player.next();
@@ -129,6 +135,7 @@ fn main() -> eframe::Result {
                 && std::env::var("MMP_NAV")
                     .map(|v| v == "album")
                     .unwrap_or(false);
+            let media = media::MediaKeys::new(cc.egui_ctx.clone());
             let app_state = match opened {
                 Ok(mut s) => {
                     match std::env::var("MMP_NAV").as_deref() {
@@ -145,6 +152,7 @@ fn main() -> eframe::Result {
                 state: app_state,
                 shot,
                 pending_album,
+                media,
             }))
         }),
     )

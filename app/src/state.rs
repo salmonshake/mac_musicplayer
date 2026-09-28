@@ -9,6 +9,7 @@ use mmp_core::library::{
 use mmp_core::paths;
 use mmp_core::playlist::PlaylistStore;
 use mmp_core::player::{Player, PlayerStatus, PlayState};
+use crate::media::MediaAction;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -582,6 +583,41 @@ impl AppState {
         self.now = self.player.status();
         if self.now.state == PlayState::Playing {
             ctx.request_repaint_after(Duration::from_millis(250));
+        }
+    }
+
+    /// Applies a play-control action (from media keys or the keyboard).
+    pub fn apply_media_action(&mut self, a: MediaAction) {
+        let has_track = self.now_track().is_some();
+        match a {
+            MediaAction::Toggle => {
+                if has_track {
+                    self.player.toggle_pause();
+                } else if let Some(i) = self.selected_track {
+                    self.play_from(i);
+                }
+            }
+            MediaAction::Play => {
+                if self.now.state == PlayState::Paused {
+                    self.player.toggle_pause();
+                } else if !has_track
+                    && let Some(i) = self.selected_track {
+                    self.play_from(i);
+                }
+            }
+            MediaAction::Pause => {
+                if self.now.state == PlayState::Playing {
+                    self.player.toggle_pause();
+                }
+            }
+            MediaAction::Next => self.player.next(),
+            MediaAction::Prev => self.player.prev(),
+            MediaAction::Stop => self.player.stop(),
+            MediaAction::SeekTo(ms) => {
+                if has_track {
+                    self.player.seek_ms(ms);
+                }
+            }
         }
     }
 }

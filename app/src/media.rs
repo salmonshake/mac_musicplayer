@@ -9,11 +9,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 /// Seek step for Seek(Forward/Backward) events.
-#[allow(dead_code)]
 const SEEK_STEP_MS: u64 = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum MediaAction {
     Play,
     Pause,
@@ -28,7 +26,6 @@ pub enum MediaAction {
 ///
 /// `position_ms` is the current playback position in milliseconds.
 /// `duration_ms` is the total track duration in milliseconds (0 if unknown).
-#[allow(dead_code)]
 pub fn media_action(
     ev: &MediaControlEvent,
     position_ms: u64,
@@ -73,7 +70,6 @@ pub fn media_action(
 }
 
 /// Converts a `PlayState` and position into a `MediaPlayback` for Now Playing.
-#[allow(dead_code)]
 pub fn playback_for(state: PlayState, position_ms: u64) -> MediaPlayback {
     let progress = Some(MediaPosition(Duration::from_millis(position_ms)));
     match state {
@@ -84,7 +80,6 @@ pub fn playback_for(state: PlayState, position_ms: u64) -> MediaPlayback {
 }
 
 /// Receives OS media-key / Now Playing events and publishes playback info.
-#[allow(dead_code)]
 pub struct MediaKeys {
     controls: MediaControls,
     rx: Receiver<MediaControlEvent>,
@@ -92,7 +87,6 @@ pub struct MediaKeys {
     last_playback: Option<(PlayState, u64)>,
 }
 
-#[allow(dead_code)]
 impl MediaKeys {
     /// Registers with the OS. Returns None if the platform refuses.
     pub fn new(ctx: egui::Context) -> Option<Self> {
@@ -116,7 +110,6 @@ impl MediaKeys {
     }
 
     /// Publishes the current track and play state to Now Playing, only when they change.
-    #[allow(dead_code)]
     pub fn update(&mut self, now: &PlayerStatus, track: Option<&TrackRow>) {
         if now.path != self.last_path {
             let meta = match track {
