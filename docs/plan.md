@@ -643,3 +643,20 @@
   スキャンが終わってから（最大 600 フレーム待つ）30 フレーム後に `ctx.send_viewport_cmd(ViewportCommand::Screenshot(Default::default()))`、
   `Event::Screenshot { image, .. }` を受けたら 24bit BMP を書き（依存追加なし）、`sips -s format png <bmp> --out <png>` で変換し、`ViewportCommand::Close` で終了
 - 完了条件: build・clippy・test 成功、`MMP_SCREENSHOT=/tmp/x.png ./target/debug/macmusicplay` で PNG ができて終了する
+
+### Task 6.13 サイドバーの見た目をモックに寄せる
+- ファイル: `app/src/ui/sidebar.rs`
+- 内容: nav 項目・ジャンル項目を **左寄せ・横幅いっぱい・高さ 30** のボタンにする:
+  `egui::Button::new(()).left_text(label).frame_when_inactive(false).corner_radius(6.0).min_size(egui::vec2(ui.available_width(), 30.0))`、
+  選択中だけ `.fill(ui.visuals().widgets.inactive.weak_bg_fill)`（控えめなグレー。鮮やかな selection 色は使わない）。
+  ジャンル行は `left_text(g)` と `right_text(RichText::new(n.to_string()).weak())`。`Add folder…` は `Add folder...`（ヒラギノの「…」は中央点になるため）
+- 完了条件: build・clippy 成功。スクショで左寄せ・グレー選択を確認
+
+### Task 6.14 表・ツールバーの細部
+- ファイル: `app/src/ui/tracks.rs`, `app/src/ui/albums.rs`, `app/src/ui/toolbar.rs`
+- 内容:
+  - すべての表の列を `resizable(false)` にし、縦の区切り線を無くす（モックに線は無い）
+  - 空の値の代替表示（weak 色）: アルバム名 `Unknown Album`、アーティスト `Unknown Artist`（album 一覧・album 詳細見出し・tracks の Artist/Album 列）
+  - 件数の単複: `pub fn count(n: usize, one: &str, many: &str) -> String`（tracks.rs に置く。`1 track` / `2 tracks`）を album 詳細見出しとツールバーで使う
+  - ツールバーの件数: Nav::Album / Artist / Genre / AllTracks は `{n} tracks`、Albums は albums、Artists は artists、Genres は genres
+- 完了条件: build・clippy・test 成功（count のテスト: 0 tracks / 1 track / 2 tracks）
