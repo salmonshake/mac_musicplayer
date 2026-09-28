@@ -36,6 +36,10 @@ impl eframe::App for MmpApp {
         if let Ok(s) = &mut self.state {
             ui::toolbar::show(ui, s);
         }
+        // Player bar (bottom panel — must be shown before other panels)
+        if let Ok(s) = &mut self.state {
+            ui::player_bar::show(ui, s);
+        }
         // Sidebar (left panel)
         if let Ok(s) = &mut self.state {
             ui::sidebar::show(ui, s);

@@ -242,7 +242,6 @@ impl AppState {
 
     /// 再生中の曲（キューに入れた時点の TrackRow）を返す。
     // 7.6 以降の UI で使う
-    #[allow(dead_code)]
     pub fn now_track(&self) -> Option<&TrackRow> {
         self.now.current_item.and_then(|i| self.queue_items.get(i))
     }
