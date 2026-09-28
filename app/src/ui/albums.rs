@@ -5,7 +5,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::state::{AppState, Nav};
 use crate::style::{HEADER_HEIGHT, ROW_HEIGHT};
-use crate::ui::tracks::format_duration;
+use crate::ui::tracks::{count, format_duration, or_unknown};
 
 /// Format total milliseconds as `h:mm:ss` (hours shown when > 0).
 pub fn format_album_duration(ms: u64) -> String {
@@ -33,8 +33,8 @@ pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
     TableBuilder::new(ui)
         .striped(true)
         .sense(egui::Sense::click())
-        .column(Column::initial(280.0).resizable(true).clip(true))
-        .column(Column::initial(200.0).resizable(true).clip(true))
+        .column(Column::initial(280.0).clip(true))
+        .column(Column::initial(200.0).clip(true))
         .column(Column::exact(56.0))
         .column(Column::exact(56.0))
         .column(Column::remainder())
@@ -53,19 +53,29 @@ pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
                     None => return,
                 };
                 row.col(|ui| {
-                    ui.label(&a.album);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(or_unknown(&a.album, "Unknown Album"));
+                    });
                 });
                 row.col(|ui| {
-                    ui.label(&a.album_artist);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(or_unknown(&a.album_artist, "Unknown Artist"));
+                    });
                 });
                 row.col(|ui| {
-                    ui.label(a.year.map(|y| y.to_string()).unwrap_or_default());
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(a.year.map(|y| y.to_string()).unwrap_or_default());
+                    });
                 });
                 row.col(|ui| {
-                    ui.label(a.track_count.to_string());
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(a.track_count.to_string());
+                    });
                 });
                 row.col(|ui| {
-                    ui.label(format_duration(a.duration_ms));
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(format_duration(a.duration_ms));
+                    });
                 });
                 if row.response().clicked() {
                     clicked = Some(a.album_key.clone());
@@ -97,15 +107,15 @@ pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
     if let Some(y) = first.year {
         parts.push(y.to_string());
     }
-    parts.push(format!("{} tracks", state.tracks.len()));
+    parts.push(count(state.tracks.len(), "track", "tracks"));
     let total_ms: u64 = state.tracks.iter().map(|t| t.duration_ms).sum();
     parts.push(format_album_duration(total_ms));
 
     let back = ui.button("← Albums").clicked();
     ui.add_space(16.0);
-    ui.label(egui::RichText::new(&album).size(26.0).strong());
+    ui.label(or_unknown(&album, "Unknown Album").size(26.0));
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(&artist).size(16.0));
+    ui.label(or_unknown(&artist, "Unknown Artist").size(16.0));
     ui.add_space(4.0);
     ui.label(egui::RichText::new(parts.join(" • ")).weak());
     ui.add_space(8.0);
@@ -128,7 +138,7 @@ pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
     TableBuilder::new(ui)
         .striped(true)
         .sense(egui::Sense::click())
-        .column(Column::initial(320.0).resizable(true).clip(true))
+        .column(Column::initial(320.0).clip(true))
         .column(Column::remainder())
         .header(HEADER_HEIGHT, |mut h| {
             for t in ["Artist", "Tracks"] {
@@ -145,10 +155,14 @@ pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
                     None => return,
                 };
                 row.col(|ui| {
-                    ui.label(name);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(name);
+                    });
                 });
                 row.col(|ui| {
-                    ui.label(count.to_string());
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(count.to_string());
+                    });
                 });
                 if row.response().clicked() {
                     clicked = Some(name.clone());
@@ -173,7 +187,7 @@ pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
     TableBuilder::new(ui)
         .striped(true)
         .sense(egui::Sense::click())
-        .column(Column::initial(320.0).resizable(true).clip(true))
+        .column(Column::initial(320.0).clip(true))
         .column(Column::remainder())
         .header(HEADER_HEIGHT, |mut h| {
             for t in ["Genre", "Tracks"] {
@@ -190,10 +204,14 @@ pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
                     None => return,
                 };
                 row.col(|ui| {
-                    ui.label(name);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(name);
+                    });
                 });
                 row.col(|ui| {
-                    ui.label(count.to_string());
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(count.to_string());
+                    });
                 });
                 if row.response().clicked() {
                     clicked = Some(name.clone());

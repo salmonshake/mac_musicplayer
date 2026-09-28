@@ -59,8 +59,8 @@ fn section(ui: &mut egui::Ui, title: &str, top: f32) {
 
 fn nav_item(ui: &mut egui::Ui, state: &mut AppState, label: &str, nav: Nav, _count: Option<u32>) {
     let selected = state.nav == nav;
-    let fill = ui.visuals().widgets.inactive.weak_bg_fill;
-    let mut b = egui::Button::new(()).left_text(label).frame_when_inactive(false).corner_radius(6.0).min_size(egui::vec2(ui.available_width(), 30.0));
+    let fill = egui::Color32::from_white_alpha(22);
+    let mut b = egui::Button::new(()).left_text(label).frame_when_inactive(selected).corner_radius(6.0).min_size(egui::vec2(ui.available_width(), 30.0));
     if selected {
         b = b.fill(fill);
     }
@@ -71,10 +71,10 @@ fn nav_item(ui: &mut egui::Ui, state: &mut AppState, label: &str, nav: Nav, _cou
 
 fn genre_item(ui: &mut egui::Ui, state: &mut AppState, g: &str, n: u32) {
     let selected = matches!(state.nav, Nav::Genre(ref fg) if fg == g);
-    let fill = ui.visuals().widgets.inactive.weak_bg_fill;
+    let fill = egui::Color32::from_white_alpha(22);
     let label = egui::RichText::new(g);
     let count_label = egui::RichText::new(n.to_string()).weak();
-    let mut b = egui::Button::new(()).left_text(label).right_text(count_label).frame_when_inactive(false).corner_radius(6.0).min_size(egui::vec2(ui.available_width(), 30.0));
+    let mut b = egui::Button::new(()).left_text(label).right_text(count_label).frame_when_inactive(selected).corner_radius(6.0).min_size(egui::vec2(ui.available_width(), 30.0));
     if selected {
         b = b.fill(fill);
     }

@@ -2,6 +2,7 @@
 
 use eframe::egui;
 use crate::state::{AppState, Nav};
+use crate::ui::tracks::count;
 
 /// Show the top toolbar panel with a search field and status text.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
@@ -46,18 +47,19 @@ fn status_text(state: &AppState) -> String {
     }
     match &state.nav {
         Nav::AllTracks
+        | Nav::Album(_)
         | Nav::Artist(_)
         | Nav::Genre(_) => {
-            format!("{} tracks", state.tracks.len())
+            count(state.tracks.len(), "track", "tracks")
         }
-        Nav::Albums | Nav::Album(_) => {
-            format!("{} albums", state.albums.len())
+        Nav::Albums => {
+            count(state.albums.len(), "album", "albums")
         }
         Nav::Artists => {
-            format!("{} artists", state.artists.len())
+            count(state.artists.len(), "artist", "artists")
         }
         Nav::Genres => {
-            format!("{} genres", state.genres.len())
+            count(state.genres.len(), "genre", "genres")
         }
     }
 }

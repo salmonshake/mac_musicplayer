@@ -30,19 +30,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
         .striped(true)
         .sense(egui::Sense::click())
         .column(Column::exact(36.0))
-        .column(Column::initial(260.0).resizable(true).clip(true));
+        .column(Column::initial(260.0).clip(true));
     let builder = if show_album_column {
         builder
             .column(Column::exact(56.0))
-            .column(Column::initial(160.0).resizable(true).clip(true))
-            .column(Column::initial(180.0).resizable(true).clip(true))
-            .column(Column::initial(100.0).resizable(true).clip(true))
+            .column(Column::initial(160.0).clip(true))
+            .column(Column::initial(180.0).clip(true))
+            .column(Column::initial(100.0).clip(true))
             .column(Column::remainder().clip(true))
     } else {
         builder
             .column(Column::exact(56.0))
-            .column(Column::initial(160.0).resizable(true).clip(true))
-            .column(Column::initial(100.0).resizable(true).clip(true))
+            .column(Column::initial(160.0).clip(true))
+            .column(Column::initial(100.0).clip(true))
             .column(Column::remainder().clip(true))
     };
     let header_labels = if show_album_column {
@@ -87,17 +87,17 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     ui.label(format_duration(t.duration_ms));
                 });
             });
-            // Artist column: center
+            // Artist column: center, show "Unknown Artist" in weak when empty.
             row.col(|ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.label(&t.artist);
+                    ui.label(or_unknown(&t.artist, "Unknown Artist"));
                 });
             });
             if show_album_column {
-                // Album column: center
+                // Album column: center, show "Unknown Album" in weak when empty.
                 row.col(|ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(&t.album);
+                        ui.label(or_unknown(&t.album, "Unknown Album"));
                     });
                 });
             }
@@ -123,14 +123,39 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
     }
 }
 
+/// Format a count with singular/plural labels: `"0 tracks"`, `"1 track"`, `"2 tracks"`.
+pub fn count(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// Return a `RichText` that renders `s` when non-empty, otherwise `placeholder` rendered with `.weak()`.
+pub fn or_unknown(s: &str, placeholder: &str) -> egui::RichText {
+    if s.is_empty() {
+        egui::RichText::new(placeholder).weak()
+    } else {
+        egui::RichText::new(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_duration;
+    use super::{count, format_duration};
 
     #[test]
     fn format_duration_values() {
         assert_eq!(format_duration(0), "0:00");
         assert_eq!(format_duration(61_000), "1:01");
         assert_eq!(format_duration(3_600_000), "60:00");
+    }
+
+    #[test]
+    fn count_values() {
+        assert_eq!(count(0, "track", "tracks"), "0 tracks");
+        assert_eq!(count(1, "track", "tracks"), "1 track");
+        assert_eq!(count(2, "track", "tracks"), "2 tracks");
     }
 }
