@@ -79,8 +79,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                     seek_bar(ui, state, 360.0);
                 });
 
-                // --- right: volume slider ---
+                // --- right: queue toggle + volume slider ---
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(egui::Button::new(()).left_text("☰").selected(state.show_queue))
+                        .clicked()
+                    {
+                        state.show_queue = !state.show_queue;
+                    }
                     let mut vol = (state.now.volume * 100.0).round();
                     if ui.add(egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false))
                         .changed()

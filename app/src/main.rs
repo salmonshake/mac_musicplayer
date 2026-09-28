@@ -66,6 +66,12 @@ impl eframe::App for MmpApp {
         if let Ok(s) = &mut self.state {
             ui::sidebar::show(ui, s);
         }
+        // Up Next (right panel)
+        if let Ok(s) = &mut self.state
+            && s.show_queue
+        {
+            ui::queue::show(ui, s);
+        }
         // Central panel
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(ui.style()).inner_margin(16.0))

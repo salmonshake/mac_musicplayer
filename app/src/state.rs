@@ -64,6 +64,8 @@ pub struct AppState {
     pub now: PlayerStatus,
     /// キューに入れた時点の曲一覧。now.current_item はこの Vec の添字 (7.5)。
     pub queue_items: Vec<TrackRow>,
+    /// Up Next パネルの表示切替フラグ (7.8)。
+    pub show_queue: bool,
     scan: Option<ScanHandle>,
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
 }
@@ -90,6 +92,7 @@ impl AppState {
             player: Player::new(None),
             now: PlayerStatus::default(),
             queue_items: Vec::new(),
+            show_queue: false,
             scan: None,
             watch: None,
         };
