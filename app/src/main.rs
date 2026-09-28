@@ -1,4 +1,5 @@
 mod fonts;
+mod media;
 mod screenshot;
 mod style;
 mod state;
