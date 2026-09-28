@@ -150,7 +150,7 @@ impl PlaylistStore {
         self.save(name, &v)
     }
 
-    /// 末尾から index 番目の曲を取り除く。
+    /// 先頭から index 番目の曲を取り除く。
     ///
     /// 範囲外の場合は何もしない（Err を返さない）。
     pub fn remove_at(&self, name: &str, index: usize) -> Result<(), PlaylistError> {
@@ -162,7 +162,7 @@ impl PlaylistStore {
         Ok(())
     }
 
-    /// 末尾から `from` 番目の曲を `to` 番目に移動する（`to` は移動後の位置）。
+    /// 先頭から `from` 番目の曲を `to` 番目に移動する（`to` は移動後の位置）。
     ///
     /// 範囲外の場合は何もしない（Err を返さない）。
     pub fn move_item(&self, name: &str, from: usize, to: usize) -> Result<(), PlaylistError> {

@@ -32,6 +32,23 @@ pub fn unique_playlist_name(existing: &[String]) -> String {
     }
 }
 
+/// Returns (current_position, neighbor_position) for a playlist move.
+///
+/// `positions` is the list of positions on the m3u8 file.
+/// - If `up` is true, the neighbor is `row - 1` (None when `row == 0`).
+/// - If `up` is false, the neighbor is `row + 1` (None when out of bounds).
+///   When `row` itself is out of bounds, returns None.
+pub fn playlist_move_target(positions: &[usize], row: usize, up: bool) -> Option<(usize, usize)> {
+    let neighbor = if up {
+        row.checked_sub(1)?
+    } else {
+        row.checked_add(1)?
+    };
+    let &cur = positions.get(row)?;
+    let &nbr = positions.get(neighbor)?;
+    Some((cur, nbr))
+}
+
 /// Sidebar navigation target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Nav {
@@ -339,12 +356,8 @@ impl AppState {
     ///
     /// Returns `Some(name)` on success, `None` when `playlist_store` is unavailable.
     #[expect(dead_code, reason = "used by the sidebar in 8.7")]
-    #[allow(clippy::question_mark)]
     pub fn create_playlist(&mut self) -> Option<String> {
-        let store = match &self.playlist_store {
-            Some(st) => st,
-            None => return None,
-        };
+        let store = self.playlist_store.as_ref()?;
         let name = unique_playlist_name(&self.playlists);
         match store.create(&name) {
             Ok(()) => {
@@ -407,6 +420,95 @@ impl AppState {
             }
             Err(e) => {
                 self.status = format!("Could not delete playlist: {e}");
+            }
+        }
+    }
+
+    /// Adds tracks to an existing playlist.
+    #[expect(dead_code, reason = "used by the track context menu in 8.8")]
+    pub fn add_to_playlist(&mut self, name: &str, paths: &[PathBuf]) {
+        let store = match &self.playlist_store {
+            Some(st) => st,
+            None => {
+                self.status = "Playlists unavailable".to_owned();
+                return;
+            }
+        };
+        let result = store.add(name, paths);
+        match result {
+            Ok(()) => {
+                self.reload_playlists();
+                if self.nav == Nav::Playlist(name.to_string()) {
+                    self.reload();
+                }
+            }
+            Err(e) => {
+                self.status = format!("Could not add to playlist: {e}");
+            }
+        }
+    }
+
+    /// Removes a track from its playlist at the given display index.
+    #[expect(dead_code, reason = "used by the track context menu in 8.8")]
+    pub fn remove_from_playlist(&mut self, track_index: usize) {
+        let name = match &self.nav {
+            Nav::Playlist(name) => name.clone(),
+            _ => return,
+        };
+        let pos = match self.playlist_positions.get(track_index) {
+            Some(&pos) => pos,
+            None => return,
+        };
+        let store = match &self.playlist_store {
+            Some(st) => st,
+            None => {
+                self.status = "Playlists unavailable".to_owned();
+                return;
+            }
+        };
+        let result = store.remove_at(&name, pos);
+        match result {
+            Ok(()) => {
+                self.reload_playlists();
+                self.reload();
+            }
+            Err(e) => {
+                self.status = format!("Could not remove from playlist: {e}");
+            }
+        }
+    }
+
+    /// Moves a track up or down within its playlist.
+    #[expect(dead_code, reason = "used by the track context menu in 8.8")]
+    pub fn move_in_playlist(&mut self, track_index: usize, up: bool) {
+        let name = match &self.nav {
+            Nav::Playlist(name) => name.clone(),
+            _ => return,
+        };
+        let (from, to) = match playlist_move_target(&self.playlist_positions, track_index, up) {
+            Some(pair) => pair,
+            None => return,
+        };
+        let store = match &self.playlist_store {
+            Some(st) => st,
+            None => {
+                self.status = "Playlists unavailable".to_owned();
+                return;
+            }
+        };
+        let result = store.move_item(&name, from, to);
+        match result {
+            Ok(()) => {
+                self.reload_playlists();
+                self.reload();
+                self.selected_track = Some(if up {
+                    track_index.saturating_sub(1)
+                } else {
+                    (track_index + 1).min(self.tracks.len().saturating_sub(1))
+                });
+            }
+            Err(e) => {
+                self.status = format!("Could not move in playlist: {e}");
             }
         }
     }
@@ -486,7 +588,7 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
-    use super::unique_playlist_name;
+    use super::{playlist_move_target, unique_playlist_name};
 
     #[test]
     fn test_unique_playlist_name_empty() {
@@ -513,5 +615,20 @@ mod tests {
     fn test_unique_playlist_name_number_taken() {
         let result = unique_playlist_name(&["New Playlist 2".to_owned()]);
         assert_eq!(result, "New Playlist");
+    }
+
+    #[test]
+    fn test_playlist_move_target() {
+        let positions = vec![0, 2, 3];
+        // (1, true) → (2, 0)
+        assert_eq!(playlist_move_target(&positions, 1, true), Some((2, 0)));
+        // (1, false) → (2, 3)
+        assert_eq!(playlist_move_target(&positions, 1, false), Some((2, 3)));
+        // (0, true) → None (row == 0, no neighbor)
+        assert_eq!(playlist_move_target(&positions, 0, true), None);
+        // (2, false) → None (row == 2 is last)
+        assert_eq!(playlist_move_target(&positions, 2, false), None);
+        // (5, true) → None (row out of bounds)
+        assert_eq!(playlist_move_target(&positions, 5, true), None);
     }
 }
