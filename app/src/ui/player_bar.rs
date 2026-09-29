@@ -10,6 +10,16 @@ fn icon(s: &str, size: f32, on: bool, accent: Color32, normal: Color32) -> egui:
     egui::RichText::new(s).size(size).color(if on { accent } else { normal })
 }
 
+/// "44.1 kHz" / "96 kHz" style label for a sample rate in Hz.
+fn khz(rate: f64) -> String {
+    let k = rate / 1000.0;
+    if (k - k.round()).abs() < 0.05 {
+        format!("{} kHz", k.round() as u32)
+    } else {
+        format!("{k:.1} kHz")
+    }
+}
+
 /// Show the bottom player bar with transport controls, volume, and seek bar.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     egui::Panel::bottom("player_bar")
@@ -31,6 +41,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             );
 
             // --- left: artwork placeholder + track info (vertically centered) ---
+            let bp_label: Option<String> = if state.now.bit_perfect {
+                let label = match state.now.device_rate {
+                    Some(r) => format!("Bit-perfect · {}", khz(r)),
+                    None => "Bit-perfect".to_string(),
+                };
+                Some(label)
+            } else {
+                None
+            };
+
             ui.scope_builder(
                 egui::UiBuilder::new().max_rect(left).layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |ui| {
@@ -40,6 +60,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                     ui.add_space(12.0);
                     ui.vertical(|ui| {
                         ui.add_space(6.0);
+                        if let Some(ref label) = bp_label {
+                            ui.label(egui::RichText::new(label).small().color(ui.visuals().selection.bg_fill));
+                        }
                         match state.now_track() {
                             Some(t) => {
                                 ui.label(egui::RichText::new(&t.title).strong().size(15.0));
@@ -147,11 +170,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
 
                     ui.add_space(8.0);
 
-                    let mut vol = (state.now.volume * 100.0).round();
-                    if ui
-                        .add(egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false))
-                        .changed()
-                    {
+                    let fixed = state.now.bit_perfect;
+                    let mut vol = if fixed { 100.0 } else { (state.now.volume * 100.0).round() };
+                    let r = ui
+                        .add_enabled(!fixed, egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false))
+                        .on_disabled_hover_text("Volume is fixed at 100% in bit-perfect mode");
+                    if r.changed() {
                         state.player.set_volume(vol / 100.0);
                     }
                     ui.label(egui::RichText::new(format!("{}%", vol as i32)).weak());
@@ -210,4 +234,17 @@ fn seek_bar(ui: &mut egui::Ui, state: &mut AppState, width: f32) {
             ui.label(egui::RichText::new(crate::ui::tracks::format_duration(duration)).weak().small());
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::khz;
+
+    #[test]
+    fn khz_labels() {
+        assert_eq!(khz(44_100.0), "44.1 kHz");
+        assert_eq!(khz(48_000.0), "48 kHz");
+        assert_eq!(khz(96_000.0), "96 kHz");
+        assert_eq!(khz(88_200.0), "88.2 kHz");
+    }
 }
