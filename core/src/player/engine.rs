@@ -97,6 +97,8 @@ enum Command {
     JumpTo(usize),
     /// Switch between normal and bit-perfect output (optionally with hog mode).
     SetOutputMode { bit_perfect: bool, hog: bool },
+    /// Use the output device with this UID (None = system default).
+    SetDevice(Option<String>),
     /// Shut down the engine thread.
     Quit,
 }
@@ -189,6 +191,12 @@ impl Player {
     /// 100%). `hog` additionally takes exclusive access to the device.
     pub fn set_output_mode(&self, bit_perfect: bool, hog: bool) {
         let _ = self.tx.send(Command::SetOutputMode { bit_perfect, hog });
+    }
+
+    /// Switch the output device by UID (`None` = follow the system default).
+    /// Playback continues from the same position on the new device.
+    pub fn set_device(&self, uid: Option<String>) {
+        let _ = self.tx.send(Command::SetDevice(uid));
     }
 
     /// Return a snapshot of the current player state.
@@ -424,6 +432,7 @@ impl Engine {
                 self.set_status(|s| s.volume = v);
             }
             Command::SetOutputMode { bit_perfect, hog } => self.set_output_mode(bit_perfect, hog),
+            Command::SetDevice(uid) => self.set_device(uid),
             Command::SetShuffle(on) => {
                 if let Some(q) = self.queue.as_mut() {
                     q.set_shuffle(on);
@@ -667,6 +676,39 @@ impl Engine {
             self.restart_current(frames);
         } else if let Some(o) = &self.out {
             o.shared.set_volume(self.effective_volume());
+        }
+        self.publish_output_mode();
+    }
+
+    fn set_device(&mut self, uid: Option<String>) {
+        let new = match &uid {
+            Some(u) => match find_output_device_by_uid(u) {
+                Ok(Some(d)) => Some(d.id),
+                Ok(None) => {
+                    let msg = format!("output device {u} not found; using the default");
+                    self.set_status(|s| s.error = Some(msg));
+                    None
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    self.set_status(|s| s.error = Some(msg));
+                    None
+                }
+            },
+            None => None,
+        };
+        if new == self.device {
+            return;
+        }
+        let resume = self.state != PlayState::Stopped && self.out.is_some();
+        let frames = self.position_frames();
+        // Stop the unit, then undo what we did to the old device.
+        self.out = None;
+        self.release_hog();
+        self.restore_original_rate();
+        self.device = new;
+        if resume {
+            self.restart_current(frames);
         }
         self.publish_output_mode();
     }
@@ -1148,6 +1190,43 @@ mod tests {
             (Duration::from_millis(5700)..=Duration::from_millis(7000)).contains(&total),
             "total {total:?}"
         );
+    }
+
+    #[test]
+    fn switching_device_keeps_playing() {
+        if !have(&["long_60s.flac"]) {
+            return;
+        }
+        let Some(uid) = crate::coreaudio::device::default_output_device().ok().and_then(|id| {
+            crate::coreaudio::device::output_devices()
+                .ok()?
+                .into_iter()
+                .find(|d| d.id == id)
+                .map(|d| d.uid)
+        }) else {
+            eprintln!("skip: no default output device");
+            return;
+        };
+        let p = muted_player();
+        p.play_queue(vec![testdata("long_60s.flac")], 0);
+        wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing).expect("playing");
+        std::thread::sleep(Duration::from_millis(500));
+        let before = p.status().position_ms;
+        // Explicit UID of the default device: a different unit, same position.
+        p.set_device(Some(uid));
+        std::thread::sleep(Duration::from_millis(400));
+        let s = p.status();
+        assert_eq!(s.state, PlayState::Playing);
+        assert!(s.position_ms >= before, "position went back: {before} -> {}", s.position_ms);
+        assert!(s.error.is_none(), "unexpected error: {:?}", s.error);
+        // Unknown UID: reported, falls back to the default, keeps playing.
+        p.set_device(Some("__no_such_device__".into()));
+        let s = wait_for(&p, Duration::from_millis(500), |s| s.error.is_some())
+            .expect("unknown device should be reported");
+        assert_eq!(s.state, PlayState::Playing);
+        p.set_device(None);
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(p.status().state, PlayState::Playing);
     }
 
     #[test]

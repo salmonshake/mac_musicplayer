@@ -871,3 +871,15 @@
 - **12.2**（指揮役）`core/src/player/engine.rs`: 出力モード、レート追従、音量固定、hog、復元、ステータス + テスト
 - **12.3** `core/src/settings.rs`: `bit_perfect` / `hog_mode` の保存 + テスト
 - **12.4** `app`: 起動時に適用、ツールバーの ⚙ メニュー（Bit-perfect / Exclusive access、成立しないデバイスでは無効）、ビットパーフェクト中は音量スライダー無効 + プレイヤーバーに「Bit-perfect · 96 kHz」表示
+
+## 追加: 出力デバイスの選択 UI（spec の MVP「出力デバイス切り替え」、ユーザー依頼 2026-09-29）
+
+設計:
+- エンジン: `Player::set_device(Option<uid>)`。再生中なら同じ位置から新しいデバイスで続ける。切り替え前に旧デバイスの hog 解放・レート復元。見つからない UID はエラー表示してデフォルトへ
+- 設定: settings.txt に `output_device=<uid>`（空 = System default）。起動時に適用
+- UI: ⚙ メニューに「Output」見出しと、`System default` + `output_devices()` の一覧をラジオボタンで。メニューを開いている間だけ一覧を取得（閉じている間は Core Audio を呼ばない）
+
+タスク:
+- **D.1**（指揮役）`core/src/player/engine.rs`: `set_device` + テスト
+- **D.2** `core/src/settings.rs`: `output_device: Option<String>`（Copy をやめる）+ テスト
+- **D.3** `app/src/state.rs` + `app/src/ui/toolbar.rs`: `set_output_device`、起動時に適用、⚙ メニューに一覧
