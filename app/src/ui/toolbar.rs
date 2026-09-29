@@ -38,7 +38,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                     let (icon, name) = match mode {
                         mmp_core::settings::ThemeMode::System => ("◐", "System"),
                         mmp_core::settings::ThemeMode::Light => ("☀", "Light"),
-                        mmp_core::settings::ThemeMode::Dark => ("☾", "Dark"),
+                        mmp_core::settings::ThemeMode::Dark => ("🌙", "Dark"),
                     };
                     let clicked = ui
                         .add(egui::Button::new(egui::RichText::new(icon).size(16.0)).frame(false))
@@ -48,27 +48,31 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                         let ctx = ui.ctx().clone();
                         state.set_theme(&ctx, mode.next());
                     }
-                    // ⚙ settings menu
+                    // ⚙ settings menu (flat, no border)
                     ui.add_space(8.0);
-                    ui.menu_button(egui::RichText::new("⚙").size(16.0), |ui| {
-                        let available = state.now.bit_perfect_available;
-                        let mut bp = state.settings.bit_perfect;
-                        let r = ui.add_enabled(available || bp, egui::Checkbox::new(&mut bp, "Bit-perfect mode"));
-                        let r = if available {
-                            r.on_hover_text("Match the device sample rate to each track; volume fixed at 100%")
-                        } else {
-                            r.on_disabled_hover_text("Not available on Bluetooth or AirPlay outputs")
-                        };
-                        if r.changed() {
-                            state.set_bit_perfect(bp);
-                        }
-                        let mut hog = state.settings.hog_mode;
-                        let r = ui
-                            .add_enabled(state.settings.bit_perfect, egui::Checkbox::new(&mut hog, "Exclusive access (hog mode)"))
-                            .on_hover_text("Other apps cannot play sound while this app uses the device");
-                        if r.changed() {
-                            state.set_hog_mode(hog);
-                        }
+                    ui.scope(|ui| {
+                        ui.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+                        ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                        ui.menu_button(egui::RichText::new("⚙").size(16.0), |ui| {
+                            let available = state.now.bit_perfect_available;
+                            let mut bp = state.settings.bit_perfect;
+                            let r = ui.add_enabled(available || bp, egui::Checkbox::new(&mut bp, "Bit-perfect mode"));
+                            let r = if available {
+                                r.on_hover_text("Match the device sample rate to each track; volume fixed at 100%")
+                            } else {
+                                r.on_disabled_hover_text("Not available on Bluetooth or AirPlay outputs")
+                            };
+                            if r.changed() {
+                                state.set_bit_perfect(bp);
+                            }
+                            let mut hog = state.settings.hog_mode;
+                            let r = ui
+                                .add_enabled(state.settings.bit_perfect, egui::Checkbox::new(&mut hog, "Exclusive access (hog mode)"))
+                                .on_hover_text("Other apps cannot play sound while this app uses the device");
+                            if r.changed() {
+                                state.set_hog_mode(hog);
+                            }
+                        });
                     });
                     ui.add_space(12.0);
                     ui.label(status_text(state));
