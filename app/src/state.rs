@@ -184,6 +184,7 @@ impl AppState {
         }
         let theme = std::env::var("MMP_THEME").ok().and_then(|v| ThemeMode::from_str_opt(&v)).unwrap_or(s.settings.theme);
         ctx.set_theme(theme_pref(theme));
+        s.player.set_output_mode(s.settings.bit_perfect, s.settings.hog_mode);
         Ok(s)
     }
 
@@ -646,15 +647,34 @@ impl AppState {
         }
     }
 
-    /// Applies a theme and saves it to settings.txt.
-    pub fn set_theme(&mut self, ctx: &egui::Context, mode: ThemeMode) {
-        self.settings.theme = mode;
-        ctx.set_theme(theme_pref(mode));
+    /// Writes settings.txt; failures go to the status line.
+    fn save_settings(&mut self) {
         if let Some(p) = &self.settings_path
             && let Err(e) = self.settings.save(p)
         {
             self.status = format!("Could not save settings: {e}");
         }
+    }
+
+    /// Turns bit-perfect output on or off and saves the choice.
+    pub fn set_bit_perfect(&mut self, on: bool) {
+        self.settings.bit_perfect = on;
+        self.player.set_output_mode(on, self.settings.hog_mode);
+        self.save_settings();
+    }
+
+    /// Turns exclusive (hog mode) access on or off and saves the choice.
+    pub fn set_hog_mode(&mut self, on: bool) {
+        self.settings.hog_mode = on;
+        self.player.set_output_mode(self.settings.bit_perfect, on);
+        self.save_settings();
+    }
+
+    /// Applies a theme and saves it to settings.txt.
+    pub fn set_theme(&mut self, ctx: &egui::Context, mode: ThemeMode) {
+        self.settings.theme = mode;
+        ctx.set_theme(theme_pref(mode));
+        self.save_settings();
     }
 }
 
