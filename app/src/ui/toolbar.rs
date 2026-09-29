@@ -50,20 +50,28 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                     }
                     // ⚙ settings menu (flat, no border)
                     ui.add_space(8.0);
-                    ui.scope(|ui| {
-                        ui.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
-                        ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                        ui.menu_button(egui::RichText::new("⚙").size(16.0), |ui| {
+                    // ⚙ settings menu: stays open while toggling options
+                    let gear = egui::Button::new(egui::RichText::new("⚙").size(16.0)).frame(false);
+                    egui::containers::menu::MenuButton::from_button(gear)
+                        .config(
+                            egui::containers::menu::MenuConfig::new()
+                                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+                        )
+                        .ui(ui, |ui| {
                             let available = state.now.bit_perfect_available;
                             let mut bp = state.settings.bit_perfect;
-                            let r = ui.add_enabled(available || bp, egui::Checkbox::new(&mut bp, "Bit-perfect mode"));
-                            let r = if available {
-                                r.on_hover_text("Match the device sample rate to each track; volume fixed at 100%")
-                            } else {
-                                r.on_disabled_hover_text("Not available on Bluetooth or AirPlay outputs")
-                            };
+                            let r = ui
+                                .add_enabled(available || bp, egui::Checkbox::new(&mut bp, "Bit-perfect mode"))
+                                .on_hover_text("Match the device sample rate to each track; volume fixed at 100%");
                             if r.changed() {
                                 state.set_bit_perfect(bp);
+                            }
+                            if !available {
+                                ui.label(
+                                    egui::RichText::new("Not available on Bluetooth or AirPlay outputs")
+                                        .small()
+                                        .weak(),
+                                );
                             }
                             let mut hog = state.settings.hog_mode;
                             let r = ui
@@ -73,7 +81,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                                 state.set_hog_mode(hog);
                             }
                         });
-                    });
                     ui.add_space(12.0);
                     ui.label(status_text(state));
                 });
