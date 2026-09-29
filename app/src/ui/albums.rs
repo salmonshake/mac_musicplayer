@@ -1,10 +1,11 @@
 //! Album list, album detail, artist list, and genre list.
 
 use eframe::egui;
-use egui_extras::{Column, TableBuilder};
+use egui_extras::Column;
 
 use crate::state::{AppState, Nav};
 use crate::style::{HEADER_HEIGHT, ROW_HEIGHT};
+use crate::ui::table::{self, RowBackground};
 use crate::ui::tracks::{count, format_duration, or_unknown};
 
 /// Format total milliseconds as `h:mm:ss` (hours shown when > 0).
@@ -20,64 +21,51 @@ pub fn format_album_duration(ms: u64) -> String {
     }
 }
 
-/// Show the album list grid.
+/// Show the album list.
 pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
     if state.albums.is_empty() {
-        ui.centered_and_justified(|ui| {
-            ui.label("No albums found.");
-        });
-        return;
+        return table::empty_message(ui, "No albums found.");
     }
     let albums = &state.albums;
+    let (builder, row_x, colors) = table::builder(ui);
     let mut clicked: Option<String> = None;
-    TableBuilder::new(ui)
-        .striped(true)
-        .sense(egui::Sense::click())
+    builder
         .column(Column::initial(280.0).clip(true))
         .column(Column::initial(200.0).clip(true))
         .column(Column::exact(56.0))
         .column(Column::exact(56.0))
         .column(Column::remainder())
-        .header(HEADER_HEIGHT, |mut h| {
-            for t in ["Album", "Artist", "Year", "Tracks", "Length"] {
-                h.col(|ui| {
-                    ui.label(egui::RichText::new(t).weak());
-                });
-            }
+        .header(HEADER_HEIGHT, |h| {
+            table::header_row(h, &["Album", "Artist", "Year", "Tracks", "Length"]);
         })
         .body(|body| {
             body.rows(ROW_HEIGHT, albums.len(), |mut row| {
                 let i = row.index();
-                let a = match albums.get(i) {
-                    Some(a) => a,
-                    None => return,
+                let Some(a) = albums.get(i) else {
+                    return;
                 };
+                let mut bg = None;
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(or_unknown(&a.album, "Unknown Album"));
-                    });
+                    bg = Some(RowBackground::reserve(ui, row_x));
+                    ui.label(or_unknown(&a.album, "Unknown Album"));
                 });
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(or_unknown(&a.album_artist, "Unknown Artist"));
-                    });
+                    ui.label(or_unknown(&a.album_artist, "Unknown Artist"));
                 });
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(a.year.map(|y| y.to_string()).unwrap_or_default());
-                    });
+                    ui.label(a.year.map(|y| y.to_string()).unwrap_or_default());
                 });
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(a.track_count.to_string());
-                    });
+                    ui.label(a.track_count.to_string());
                 });
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(format_duration(a.duration_ms));
-                    });
+                    ui.label(format_duration(a.duration_ms));
                 });
-                if row.response().clicked() {
+                let resp = row.response();
+                if let Some(bg) = bg {
+                    bg.paint(&resp, colors.fill(i, resp.hovered(), false, false));
+                }
+                if resp.clicked() {
                     clicked = Some(a.album_key.clone());
                 }
             });
@@ -90,10 +78,7 @@ pub fn show_albums(ui: &mut egui::Ui, state: &mut AppState) {
 /// Show the detail view for a single album.
 pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
     let Some(first) = state.tracks.first() else {
-        ui.centered_and_justified(|ui| {
-            ui.label("No tracks in this album.");
-        });
-        return;
+        return table::empty_message(ui, "No tracks in this album.");
     };
 
     // Extract owned values before any mutable borrow of state.
@@ -138,48 +123,9 @@ pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
 /// Show the artist list.
 pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
     if state.artists.is_empty() {
-        ui.centered_and_justified(|ui| {
-            ui.label("No artists found.");
-        });
-        return;
+        return table::empty_message(ui, "No artists found.");
     }
-    let artists = &state.artists;
-    let mut clicked: Option<String> = None;
-    TableBuilder::new(ui)
-        .striped(true)
-        .sense(egui::Sense::click())
-        .column(Column::initial(320.0).clip(true))
-        .column(Column::remainder())
-        .header(HEADER_HEIGHT, |mut h| {
-            for t in ["Artist", "Tracks"] {
-                h.col(|ui| {
-                    ui.label(egui::RichText::new(t).weak());
-                });
-            }
-        })
-        .body(|body| {
-            body.rows(ROW_HEIGHT, artists.len(), |mut row| {
-                let i = row.index();
-                let (name, count) = match artists.get(i) {
-                    Some(n) => n,
-                    None => return,
-                };
-                row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(name);
-                    });
-                });
-                row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(count.to_string());
-                    });
-                });
-                if row.response().clicked() {
-                    clicked = Some(name.clone());
-                }
-            });
-        });
-    if let Some(name) = clicked {
+    if let Some(name) = name_count_table(ui, &state.artists, "Artist") {
         state.set_nav(Nav::Artist(name));
     }
 }
@@ -187,50 +133,45 @@ pub fn show_artists(ui: &mut egui::Ui, state: &mut AppState) {
 /// Show the genre list.
 pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
     if state.genres.is_empty() {
-        ui.centered_and_justified(|ui| {
-            ui.label("No genres found.");
-        });
-        return;
+        return table::empty_message(ui, "No genres found.");
     }
-    let genres = &state.genres;
-    let mut clicked: Option<String> = None;
-    TableBuilder::new(ui)
-        .striped(true)
-        .sense(egui::Sense::click())
+    if let Some(name) = name_count_table(ui, &state.genres, "Genre") {
+        state.set_nav(Nav::Genre(name));
+    }
+}
+
+/// A (name, track count) table; returns the clicked name.
+fn name_count_table(ui: &mut egui::Ui, rows: &[(String, u32)], name_header: &str) -> Option<String> {
+    let (builder, row_x, colors) = table::builder(ui);
+    let mut clicked = None;
+    builder
         .column(Column::initial(320.0).clip(true))
         .column(Column::remainder())
-        .header(HEADER_HEIGHT, |mut h| {
-            for t in ["Genre", "Tracks"] {
-                h.col(|ui| {
-                    ui.label(egui::RichText::new(t).weak());
-                });
-            }
-        })
+        .header(HEADER_HEIGHT, |h| table::header_row(h, &[name_header, "Tracks"]))
         .body(|body| {
-            body.rows(ROW_HEIGHT, genres.len(), |mut row| {
+            body.rows(ROW_HEIGHT, rows.len(), |mut row| {
                 let i = row.index();
-                let (name, count) = match genres.get(i) {
-                    Some(n) => n,
-                    None => return,
+                let Some((name, n)) = rows.get(i) else {
+                    return;
                 };
+                let mut bg = None;
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(name);
-                    });
+                    bg = Some(RowBackground::reserve(ui, row_x));
+                    ui.label(name);
                 });
                 row.col(|ui| {
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(count.to_string());
-                    });
+                    ui.label(n.to_string());
                 });
-                if row.response().clicked() {
+                let resp = row.response();
+                if let Some(bg) = bg {
+                    bg.paint(&resp, colors.fill(i, resp.hovered(), false, false));
+                }
+                if resp.clicked() {
                     clicked = Some(name.clone());
                 }
             });
         });
-    if let Some(name) = clicked {
-        state.set_nav(Nav::Genre(name));
-    }
+    clicked
 }
 
 #[cfg(test)]
