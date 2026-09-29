@@ -1,3 +1,4 @@
+mod artwork;
 mod fonts;
 mod media;
 mod screenshot;
@@ -129,7 +130,7 @@ fn main() -> eframe::Result {
             if found.is_none() {
                 eprintln!("CJK font not found");
             }
-            let opened = state::AppState::open().map_err(|e| e.to_string());
+            let opened = state::AppState::open(&cc.egui_ctx).map_err(|e| e.to_string());
             let shot = screenshot::Screenshotter::from_env();
             let pending_album = shot.is_some()
                 && std::env::var("MMP_NAV")

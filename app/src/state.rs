@@ -118,11 +118,13 @@ pub struct AppState {
     pub rename_focus: bool,
     scan: Option<ScanHandle>,
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
+    /// In-memory LRU artwork texture cache.
+    pub art: crate::artwork::ArtTextures,
 }
 
 impl AppState {
     /// Opens the library, loads the current view and starts a background scan.
-    pub fn open() -> Result<Self, String> {
+    pub fn open(ctx: &egui::Context) -> Result<Self, String> {
         let db_path = paths::library_db_path().map_err(|e| e.to_string())?;
         let lib = Library::open(&db_path).map_err(|e| e.to_string())?;
         let (playlist_store, store_err) =
@@ -155,6 +157,7 @@ impl AppState {
             rename_focus: false,
             scan: None,
             watch: None,
+            art: crate::artwork::ArtTextures::new(ctx),
         };
         s.reload_playlists();
         s.reload();
@@ -584,6 +587,9 @@ impl AppState {
         if self.now.state == PlayState::Playing {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
+
+        // f) artwork cache
+        self.art.poll(ctx);
     }
 
     /// Applies a play-control action (from media keys or the keyboard).
