@@ -12,6 +12,8 @@ struct MmpApp {
     state: Result<state::AppState, String>,
     shot: Option<screenshot::Screenshotter>,
     pending_album: bool,
+    pending_play: Option<usize>,
+    pending_select: Option<usize>,
     media: Option<media::MediaKeys>,
 }
 
@@ -30,6 +32,8 @@ impl eframe::App for MmpApp {
             m.update(&s.now, s.now_track());
         }
         if let (Some(shot), Ok(s)) = (&mut self.shot, &mut self.state) {
+            // Dev hooks: applied after the scan's reload, which clears the selection.
+            let pending = (self.pending_play.take(), self.pending_select.take());
             if self.pending_album && !s.scanning {
                 self.pending_album = false;
                 if s.nav != state::Nav::Albums {
@@ -38,6 +42,18 @@ impl eframe::App for MmpApp {
                 if let Some(k) = s.albums.first().map(|a| a.album_key.clone()) {
                     s.set_nav(state::Nav::Album(k));
                 }
+            }
+            if !s.scanning {
+                if let Some(i) = pending.0 {
+                    s.player.set_volume(0.0);
+                    s.play_from(i);
+                }
+                if let Some(i) = pending.1 {
+                    s.selected_track = Some(i);
+                }
+            } else {
+                self.pending_play = pending.0;
+                self.pending_select = pending.1;
             }
             shot.tick(ctx, s.scanning);
         }
@@ -136,6 +152,19 @@ fn main() -> eframe::Result {
                 && std::env::var("MMP_NAV")
                     .map(|v| v == "album")
                     .unwrap_or(false);
+            let env_index = |k: &str| {
+                std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok())
+            };
+            let pending_play = if shot.is_some() {
+                env_index("MMP_PLAY")
+            } else {
+                None
+            };
+            let pending_select = if shot.is_some() {
+                env_index("MMP_SELECT")
+            } else {
+                None
+            };
             let media = media::MediaKeys::new(cc.egui_ctx.clone());
             let app_state = match opened {
                 Ok(mut s) => {
@@ -153,6 +182,8 @@ fn main() -> eframe::Result {
                 state: app_state,
                 shot,
                 pending_album,
+                pending_play,
+                pending_select,
                 media,
             }))
         }),
