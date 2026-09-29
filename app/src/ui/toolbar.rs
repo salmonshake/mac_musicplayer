@@ -34,6 +34,21 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
 
                 // Status text on the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mode = state.settings.theme;
+                    let (icon, name) = match mode {
+                        mmp_core::settings::ThemeMode::System => ("◐", "System"),
+                        mmp_core::settings::ThemeMode::Light => ("☀", "Light"),
+                        mmp_core::settings::ThemeMode::Dark => ("☾", "Dark"),
+                    };
+                    let clicked = ui
+                        .add(egui::Button::new(egui::RichText::new(icon).size(16.0)).frame(false))
+                        .on_hover_text(format!("Theme: {name}"))
+                        .clicked();
+                    if clicked {
+                        let ctx = ui.ctx().clone();
+                        state.set_theme(&ctx, mode.next());
+                    }
+                    ui.add_space(12.0);
                     ui.label(status_text(state));
                 });
             });

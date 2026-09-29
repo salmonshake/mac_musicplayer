@@ -9,10 +9,20 @@ use mmp_core::library::{
 use mmp_core::paths;
 use mmp_core::playlist::PlaylistStore;
 use mmp_core::player::{Player, PlayerStatus, PlayState};
+use mmp_core::settings::{Settings, ThemeMode};
 use crate::media::MediaAction;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
+
+/// egui theme preference for a saved theme mode.
+pub fn theme_pref(m: ThemeMode) -> egui::ThemePreference {
+    match m {
+        ThemeMode::System => egui::ThemePreference::System,
+        ThemeMode::Light => egui::ThemePreference::Light,
+        ThemeMode::Dark => egui::ThemePreference::Dark,
+    }
+}
 
 /// Returns a playlist name that does not appear in `existing`.
 ///
@@ -120,6 +130,9 @@ pub struct AppState {
     watch: Option<(LibraryWatcher, Receiver<ScanEvent>)>,
     /// In-memory LRU artwork texture cache.
     pub art: crate::artwork::ArtTextures,
+    /// Persisted user settings (11.3).
+    pub settings: Settings,
+    settings_path: Option<PathBuf>,
 }
 
 impl AppState {
@@ -127,6 +140,8 @@ impl AppState {
     pub fn open(ctx: &egui::Context) -> Result<Self, String> {
         let db_path = paths::library_db_path().map_err(|e| e.to_string())?;
         let lib = Library::open(&db_path).map_err(|e| e.to_string())?;
+        let settings_path = paths::settings_path().ok();
+        let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
         let (playlist_store, store_err) =
             match paths::playlists_dir().and_then(PlaylistStore::new) {
                 Ok(st) => (Some(st), None),
@@ -158,6 +173,8 @@ impl AppState {
             scan: None,
             watch: None,
             art: crate::artwork::ArtTextures::new(ctx),
+            settings,
+            settings_path,
         };
         s.reload_playlists();
         s.reload();
@@ -165,6 +182,8 @@ impl AppState {
         if let Some(e) = store_err {
             s.status = e;
         }
+        let theme = std::env::var("MMP_THEME").ok().and_then(|v| ThemeMode::from_str_opt(&v)).unwrap_or(s.settings.theme);
+        ctx.set_theme(theme_pref(theme));
         Ok(s)
     }
 
@@ -626,11 +645,24 @@ impl AppState {
             }
         }
     }
+
+    /// Applies a theme and saves it to settings.txt.
+    pub fn set_theme(&mut self, ctx: &egui::Context, mode: ThemeMode) {
+        self.settings.theme = mode;
+        ctx.set_theme(theme_pref(mode));
+        if let Some(p) = &self.settings_path
+            && let Err(e) = self.settings.save(p)
+        {
+            self.status = format!("Could not save settings: {e}");
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{playlist_move_target, unique_playlist_name};
+    use super::{playlist_move_target, theme_pref, unique_playlist_name};
+    use mmp_core::settings::ThemeMode;
+    use eframe::egui;
 
     #[test]
     fn test_unique_playlist_name_empty() {
@@ -672,5 +704,12 @@ mod tests {
         assert_eq!(playlist_move_target(&positions, 2, false), None);
         // (5, true) → None (row out of bounds)
         assert_eq!(playlist_move_target(&positions, 5, true), None);
+    }
+
+    #[test]
+    fn test_theme_pref() {
+        assert_eq!(theme_pref(ThemeMode::System), egui::ThemePreference::System);
+        assert_eq!(theme_pref(ThemeMode::Light), egui::ThemePreference::Light);
+        assert_eq!(theme_pref(ThemeMode::Dark), egui::ThemePreference::Dark);
     }
 }
