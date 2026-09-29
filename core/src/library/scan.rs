@@ -23,6 +23,12 @@ pub struct ScanStats {
     pub folder_missing: bool,
 }
 
+impl ScanStats {
+    /// Whether the scan changed the library (anything added, updated or removed).
+    pub fn changed(&self) -> bool {
+        self.added + self.updated + self.removed > 0
+    }
+}
 
 /// Audio extensions recognised by the library scanner (lowercase).
 const AUDIO_EXTENSIONS: &[&str] = &[

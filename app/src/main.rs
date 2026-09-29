@@ -168,6 +168,12 @@ fn main() -> eframe::Result {
             let media = media::MediaKeys::new(cc.egui_ctx.clone());
             let app_state = match opened {
                 Ok(mut s) => {
+                    if let Some(t) = std::env::var("MMP_THEME")
+                        .ok()
+                        .and_then(|v| mmp_core::settings::ThemeMode::from_str_opt(&v))
+                    {
+                        cc.egui_ctx.set_theme(state::theme_pref(t));
+                    }
                     match std::env::var("MMP_NAV").as_deref() {
                         Ok("albums") => s.set_nav(state::Nav::Albums),
                         Ok("artists") => s.set_nav(state::Nav::Artists),
