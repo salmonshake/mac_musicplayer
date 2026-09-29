@@ -43,13 +43,23 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
         return;
     }
     let tracks = &state.tracks;
+    // Row backgrounds are drawn by us (rounded); see the rows closure.
+    let accent = ui.visuals().selection.bg_fill;
+    let sel_fill = crate::style::subtle_fill(ui, 36);
+    let stripe_fill = crate::style::subtle_fill(ui, 8);
+    let hover_fill = crate::style::subtle_fill(ui, 18);
+    let play_fill = accent.gamma_multiply(0.28);
+    let play_sel_fill = accent.gamma_multiply(0.42);
+    let row_x = ui.max_rect().x_range();
+    // Disable egui_extras' square hover fill; we paint our own.
+    ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
     let selected = state.selected_track;
     // Current playing track path (for highlighting + double-click replay).
     let playing_path: Option<std::path::PathBuf> = state.now.path.clone();
     let mut clicked: Option<usize> = None;
     let mut double_clicked: Option<usize> = None;
     let builder = TableBuilder::new(ui)
-        .striped(true)
+        .striped(false)
         .sense(egui::Sense::click())
         .column(Column::exact(36.0))
         .column(Column::initial(260.0).clip(true));
@@ -87,9 +97,14 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
             };
             // Highlight the currently playing row (different from selection).
             let is_playing = playing_path.as_deref() == Some(t.path.as_path());
-            row.set_selected(selected == Some(i) || is_playing);
+            let mut bg: Option<(egui::Painter, egui::layers::ShapeIdx)> = None;
             // # column: right-aligned
             row.col(|ui| {
+                // Reserve a slot under the row's contents for its background.
+                let mut p = ui.painter().clone();
+                p.set_clip_rect(egui::Rect::from_x_y_ranges(row_x, ui.clip_rect().y_range()));
+                let idx = p.add(egui::Shape::Noop);
+                bg = Some((p, idx));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         egui::RichText::new(
@@ -102,13 +117,20 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
             // Title column: center, show "PLAYING" badge when this track is active.
             row.col(|ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.label(&t.title);
+                    let title = if is_playing {
+                        egui::RichText::new(&t.title).color(accent).strong()
+                    } else {
+                        egui::RichText::new(&t.title)
+                    };
+                    ui.label(title);
                     if is_playing {
-                        ui.label(egui::RichText::new(" PLAYING ")
-                            .small()
-                            .strong()
-                            .color(egui::Color32::WHITE)
-                            .background_color(ui.visuals().selection.bg_fill));
+                        egui::Frame::new()
+                            .fill(accent)
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::symmetric(6, 1))
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("PLAYING").small().strong().color(egui::Color32::WHITE));
+                            });
                     }
                 });
             });
@@ -144,14 +166,27 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     ui.label(t.format_label());
                 });
             });
-            if row.response().clicked() {
+            let resp = row.response();
+            if let Some((p, idx)) = bg {
+                let is_sel = selected == Some(i);
+                let fill = match (is_playing, is_sel) {
+                    (true, true) => play_sel_fill,
+                    (true, false) => play_fill,
+                    (false, true) => sel_fill,
+                    _ if resp.hovered() => hover_fill,
+                    _ if i % 2 == 1 => stripe_fill,
+                    _ => egui::Color32::TRANSPARENT,
+                };
+                p.set(idx, egui::Shape::rect_filled(resp.rect.shrink2(egui::vec2(0.0, 1.0)), 8.0, fill));
+            }
+            if resp.clicked() {
                 clicked = Some(i);
             }
-            if row.response().double_clicked() {
+            if resp.double_clicked() {
                 double_clicked = Some(i);
             }
             // Context menu: right-click actions (Add to Playlist / Remove / Move).
-            row.response().context_menu(|ui| {
+            resp.context_menu(|ui| {
                 ui.menu_button("Add to Playlist", |ui| {
                     if playlists.is_empty() {
                         ui.label(egui::RichText::new("No playlists").weak());
