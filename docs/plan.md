@@ -852,3 +852,22 @@
 - **11.1** `core/src/settings.rs` + `core/src/paths.rs`: `ThemeMode`（`next()` で巡回）、`Settings { theme }`、`parse(text)` / `to_text()` / `load(path)` / `save(path)`、`settings_path()` + テスト
 - **11.2** `app/src/style.rs` + `ui/sidebar.rs` + `ui/player_bar.rs` + `artwork.rs`: `subtle_fill(ui, alpha)` を作り、`from_white_alpha` の 5 箇所を置き換える
 - **11.3** `app/src/state.rs` + `app/src/ui/toolbar.rs` + `app/src/main.rs`: AppState に `settings` / `settings_path`、`set_theme(ctx, mode)`（適用 + 保存）、起動時に適用（`MMP_THEME` 優先）、ツールバーの切り替えボタン
+
+## 段階12: ビットパーフェクトモード
+
+仕様（spec.md「音量モード」）: 曲ごとに出力デバイスのサンプルレートを曲に追従 / ソフトウェア音量 100% 固定（スライダー無効）/ hog mode は設定で選択 / Bluetooth など成立しないデバイスでは選択不可
+
+設計:
+- 12.1・12.2 は音声エンジンのコアなので指揮役が直接書く（CLAUDE.md の例外）。12.3・12.4 はワーカー
+- device.rs に安全ラッパーを追加: 利用可能なレート一覧（`kAudioDevicePropertyAvailableNominalSampleRates` → `AudioValueRange` の配列）、レートの取得/設定（設定は非同期なので読み戻して最大 1 秒待つ）、hog mode（`kAudioDevicePropertyHogMode` はトグル動作: 値に関係なく「空いていれば取得・自分が持っていれば解放」。取得/解放の前に現在の所有 pid を読んで判断する）
+- 成立しないデバイス: Bluetooth / Bluetooth LE / AirPlay
+- エンジン: `Player::set_output_mode(bit_perfect, hog)`。ビットパーフェクト時は出力を開く前に対象デバイス（未指定ならデフォルト出力の ID）のレートを曲のレートに合わせる（対応していなければそのまま・ステータスに注記）。ソフト音量は 1.0 固定（ユーザーの音量値は保持し、通常モードに戻したら反映）。gapless の先読みは今どおり「同じレート・ch のときだけ」なので、レートが変わる曲間では出力を作り直してレートが切り替わる
+- デバイスのレートは最初に変更したときの値を覚えておき、モード解除・終了時に戻す。hog も同様に解放
+- PlayerStatus に `bit_perfect: bool`、`bit_perfect_available: bool`（現在のデバイスで成立するか）、`device_rate: Option<f64>` を追加
+- 設定: settings.txt に `bit_perfect=on|off`、`hog_mode=on|off`
+
+タスク:
+- **12.1**（指揮役）`core/src/coreaudio/device.rs`: `nominal_sample_rate(id)`、`available_sample_rates(id)`、`supports_rate(ranges, rate)`、`set_nominal_sample_rate(id, rate)`、`hog_owner(id)` / `set_hog(id, on)`、`transport_type(id)` / `bit_perfect_capable(transport)` + テスト
+- **12.2**（指揮役）`core/src/player/engine.rs`: 出力モード、レート追従、音量固定、hog、復元、ステータス + テスト
+- **12.3** `core/src/settings.rs`: `bit_perfect` / `hog_mode` の保存 + テスト
+- **12.4** `app`: 起動時に適用、ツールバーの ⚙ メニュー（Bit-perfect / Exclusive access、成立しないデバイスでは無効）、ビットパーフェクト中は音量スライダー無効 + プレイヤーバーに「Bit-perfect · 96 kHz」表示

@@ -62,3 +62,32 @@ fn test_output_devices() {
     // is_alive(0) returns false.
     assert!(!device::is_alive(0), "is_alive(0) should be false");
 }
+
+#[test]
+fn test_default_device_rates() {
+    let Ok(id) = device::default_output_device() else {
+        eprintln!("no default output device — skipping");
+        return;
+    };
+    let rate = device::nominal_sample_rate(id).expect("nominal rate");
+    assert!(rate > 0.0, "nominal rate {rate}");
+    let ranges = device::available_sample_rates(id).expect("available rates");
+    assert!(!ranges.is_empty(), "device reports no available rates");
+    assert!(
+        device::supports_rate(&ranges, rate),
+        "current rate {rate} not in {ranges:?}"
+    );
+    // Setting the current rate is a no-op and must succeed.
+    device::set_nominal_sample_rate(id, rate).expect("set current rate");
+    // Hog owner is readable (-1 when nobody holds it).
+    let owner = device::hog_owner(id).expect("hog owner");
+    assert!(owner == -1 || owner > 0, "hog owner {owner}");
+    // transport_type matches the enumerated info.
+    let t = device::transport_type(id).expect("transport type");
+    let info = device::output_devices()
+        .expect("devices")
+        .into_iter()
+        .find(|d| d.id == id)
+        .expect("default device listed");
+    assert_eq!(t, info.transport_type);
+}

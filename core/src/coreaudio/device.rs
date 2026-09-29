@@ -3,16 +3,20 @@ use std::ptr::{self, NonNull};
 
 use objc2_core_audio::{
     AudioObjectID, AudioObjectPropertyAddress, AudioObjectGetPropertyData,
-    AudioObjectGetPropertyDataSize, kAudioDevicePropertyDeviceIsAlive,
-    kAudioDevicePropertyDeviceUID, kAudioDevicePropertyNominalSampleRate,
+    AudioObjectGetPropertyDataSize, AudioObjectSetPropertyData,
+    kAudioDevicePropertyAvailableNominalSampleRates, kAudioDevicePropertyDeviceIsAlive,
+    kAudioDevicePropertyDeviceUID, kAudioDevicePropertyHogMode,
+    kAudioDevicePropertyNominalSampleRate,
     kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyTransportType,
+    kAudioDeviceTransportTypeAirPlay,
     kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE,
     kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDevices,
     kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyScopeOutput,
     kAudioObjectPropertyName, kAudioObjectPropertyElementMain,
     kAudioObjectSystemObject,
 };
-use objc2_core_audio_types::AudioBufferList;
+use objc2_core_audio_types::{AudioBufferList, AudioValueRange};
+use std::time::{Duration, Instant};
 use objc2_core_foundation::{CFRetained, CFString};
 
 use crate::coreaudio::error::{check, CoreAudioError, Result};
@@ -43,6 +47,26 @@ impl DeviceInfo {
         self.transport_type == kAudioDeviceTransportTypeBluetooth
             || self.transport_type == kAudioDeviceTransportTypeBluetoothLE
     }
+
+    /// Returns `true` if bit-perfect playback can work on this device.
+    pub fn is_bit_perfect_capable(&self) -> bool {
+        bit_perfect_capable(self.transport_type)
+    }
+}
+
+/// Bit-perfect output needs a wired/local device whose rate we can set;
+/// Bluetooth and AirPlay re-encode the stream, so they are excluded.
+pub fn bit_perfect_capable(transport_type: u32) -> bool {
+    transport_type != kAudioDeviceTransportTypeBluetooth
+        && transport_type != kAudioDeviceTransportTypeBluetoothLE
+        && transport_type != kAudioDeviceTransportTypeAirPlay
+}
+
+/// Whether `rate` lies in one of the device's supported (min, max) ranges.
+pub fn supports_rate(ranges: &[(f64, f64)], rate: f64) -> bool {
+    ranges
+        .iter()
+        .any(|&(lo, hi)| rate >= lo - 0.5 && rate <= hi + 0.5)
 }
 
 const SYSTEM: AudioObjectID = kAudioObjectSystemObject as AudioObjectID;
@@ -273,6 +297,124 @@ pub fn find_output_device_by_uid(uid: &str) -> Result<Option<DeviceInfo>> {
     Ok(output_devices()?.into_iter().find(|d| d.uid == uid))
 }
 
+/// Writes a plain-data property value.
+fn set_value<T>(id: AudioObjectID, selector: u32, v: &mut T, context: &'static str) -> Result<()> {
+    let mut a = addr(selector, kAudioObjectPropertyScopeGlobal);
+    // SAFETY: `v` points to a live `T` of `size_of::<T>()` bytes, which is the
+    // data layout the caller's selector expects.
+    unsafe {
+        check(
+            AudioObjectSetPropertyData(
+                id,
+                NonNull::from(&mut a),
+                0,
+                ptr::null(),
+                size_of::<T>() as u32,
+                NonNull::from(v).cast::<c_void>(),
+            ),
+            context,
+        )
+    }
+}
+
+/// Returns the device's transport type (built-in, USB, Bluetooth, ...).
+pub fn transport_type(id: DeviceId) -> Result<u32> {
+    get_u32(id, kAudioDevicePropertyTransportType, kAudioObjectPropertyScopeGlobal)
+}
+
+/// Returns the device's current nominal sample rate.
+pub fn nominal_sample_rate(id: DeviceId) -> Result<f64> {
+    get_f64(id, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal)
+}
+
+/// Returns the nominal sample rates the device supports as (min, max) ranges
+/// (discrete rates have min == max).
+pub fn available_sample_rates(id: DeviceId) -> Result<Vec<(f64, f64)>> {
+    let mut a = addr(kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal);
+    let mut size: u32 = 0;
+    // SAFETY: valid property address on a device object.
+    unsafe {
+        check(
+            AudioObjectGetPropertyDataSize(id, NonNull::from(&mut a), 0, ptr::null(), NonNull::from(&mut size)),
+            "AudioObjectGetPropertyDataSize (available rates)",
+        )?;
+    }
+    let n = size as usize / size_of::<AudioValueRange>();
+    if n == 0 {
+        return Ok(Vec::new());
+    }
+    let mut ranges = vec![AudioValueRange { mMinimum: 0.0, mMaximum: 0.0 }; n];
+    // SAFETY: `ranges` holds `n * sizeof(AudioValueRange)` = `size` bytes.
+    unsafe {
+        check(
+            AudioObjectGetPropertyData(
+                id,
+                NonNull::from(&mut a),
+                0,
+                ptr::null(),
+                NonNull::from(&mut size),
+                NonNull::from(ranges.as_mut_slice()).cast::<c_void>(),
+            ),
+            "AudioObjectGetPropertyData (available rates)",
+        )?;
+    }
+    ranges.truncate(size as usize / size_of::<AudioValueRange>());
+    Ok(ranges.iter().map(|r| (r.mMinimum, r.mMaximum)).collect())
+}
+
+/// How long to wait for the HAL to apply a nominal rate change.
+const RATE_CHANGE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Sets the device's nominal sample rate and waits until it takes effect
+/// (the change is asynchronous). No-op if the rate is already current.
+pub fn set_nominal_sample_rate(id: DeviceId, rate: f64) -> Result<()> {
+    if (nominal_sample_rate(id)? - rate).abs() < 0.5 {
+        return Ok(());
+    }
+    let mut v = rate;
+    set_value(id, kAudioDevicePropertyNominalSampleRate, &mut v, "AudioObjectSetPropertyData (nominal rate)")?;
+    let deadline = Instant::now() + RATE_CHANGE_TIMEOUT;
+    loop {
+        if (nominal_sample_rate(id)? - rate).abs() < 0.5 {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            return Err(CoreAudioError::Unsupported(format!("device did not switch to {rate} Hz")));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The pid that holds exclusive (hog) access to the device, or -1 if none.
+pub fn hog_owner(id: DeviceId) -> Result<i32> {
+    // pid_t is a 32-bit signed integer; read the raw bits.
+    get_u32(id, kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal).map(|v| v as i32)
+}
+
+/// Takes (`on`) or releases exclusive access to the device for this process.
+///
+/// The HAL property is a toggle — writing it acquires when free and releases
+/// when we own it — so the current owner is checked first.
+pub fn set_hog(id: DeviceId, on: bool) -> Result<()> {
+    let me = std::process::id() as i32;
+    let owner = hog_owner(id)?;
+    if (owner == me) == on {
+        return Ok(());
+    }
+    if on && owner != -1 {
+        return Err(CoreAudioError::Unsupported(format!(
+            "device is in exclusive use by process {owner}"
+        )));
+    }
+    let mut v: i32 = me;
+    set_value(id, kAudioDevicePropertyHogMode, &mut v, "AudioObjectSetPropertyData (hog mode)")?;
+    if (hog_owner(id)? == me) == on {
+        Ok(())
+    } else {
+        Err(CoreAudioError::Unsupported("hog mode change was not applied".into()))
+    }
+}
+
 /// Returns `true` if the device is alive. Returns `false` on any error.
 pub fn is_alive(id: DeviceId) -> bool {
     get_u32(
@@ -282,4 +424,31 @@ pub fn is_alive(id: DeviceId) -> bool {
     )
     .map(|v| v != 0)
     .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supports_rate_discrete_and_range() {
+        let discrete = [(44_100.0, 44_100.0), (48_000.0, 48_000.0)];
+        assert!(supports_rate(&discrete, 44_100.0));
+        assert!(supports_rate(&discrete, 48_000.0));
+        assert!(!supports_rate(&discrete, 96_000.0));
+        let range = [(8_000.0, 192_000.0)];
+        assert!(supports_rate(&range, 88_200.0));
+        assert!(!supports_rate(&range, 384_000.0));
+        assert!(!supports_rate(&[], 44_100.0));
+    }
+
+    #[test]
+    fn bit_perfect_excludes_wireless() {
+        assert!(!bit_perfect_capable(kAudioDeviceTransportTypeBluetooth));
+        assert!(!bit_perfect_capable(kAudioDeviceTransportTypeBluetoothLE));
+        assert!(!bit_perfect_capable(kAudioDeviceTransportTypeAirPlay));
+        // 'bltn' (built-in) and 'usb ' are fine.
+        assert!(bit_perfect_capable(0x626c_746e));
+        assert!(bit_perfect_capable(0x7573_6220));
+    }
 }
