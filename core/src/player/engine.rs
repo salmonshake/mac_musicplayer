@@ -44,6 +44,12 @@ pub struct PlayerStatus {
     pub error: Option<String>,
     /// Item indices of tracks after the current one.
     pub upcoming: Vec<usize>,
+    /// Bit-perfect mode is on (software volume bypassed, device rate follows the track).
+    pub bit_perfect: bool,
+    /// Bit-perfect mode can work on the current output device (not Bluetooth/AirPlay).
+    pub bit_perfect_available: bool,
+    /// Nominal sample rate of the output device, once an output is open.
+    pub device_rate: Option<f64>,
 }
 
 impl Default for PlayerStatus {
@@ -59,6 +65,9 @@ impl Default for PlayerStatus {
             repeat: RepeatMode::default(),
             error: None,
             upcoming: Vec::new(),
+            bit_perfect: false,
+            bit_perfect_available: false,
+            device_rate: None,
         }
     }
 }
@@ -86,6 +95,8 @@ enum Command {
     SetRepeat(RepeatMode),
     /// Jump to a specific item by its index into the queue.
     JumpTo(usize),
+    /// Switch between normal and bit-perfect output (optionally with hog mode).
+    SetOutputMode { bit_perfect: bool, hog: bool },
     /// Shut down the engine thread.
     Quit,
 }
@@ -171,6 +182,13 @@ impl Player {
     /// Jump to a specific item by its index into the queue.
     pub fn jump_to_item(&self, i: usize) {
         let _ = self.tx.send(Command::JumpTo(i));
+    }
+
+    /// Normal output (software volume, the HAL resamples as needed) or
+    /// bit-perfect output (device rate follows each track, volume fixed at
+    /// 100%). `hog` additionally takes exclusive access to the device.
+    pub fn set_output_mode(&self, bit_perfect: bool, hog: bool) {
+        let _ = self.tx.send(Command::SetOutputMode { bit_perfect, hog });
     }
 
     /// Return a snapshot of the current player state.
@@ -271,6 +289,25 @@ struct Engine {
     /// (open failed or format differs); handle it after the ring drains.
     no_prefetch: bool,
     last_status: Instant,
+    /// Bit-perfect output requested.
+    bit_perfect: bool,
+    /// Exclusive (hog) access requested (only used with bit-perfect).
+    hog: bool,
+    /// Device whose hog mode we currently hold.
+    hogged: Option<DeviceId>,
+    /// Device rate before we first changed it, restored when leaving the mode.
+    restore_rate: Option<(DeviceId, f64)>,
+    /// Why bit-perfect could not be fully applied to the last output (shown as the status error).
+    output_note: Option<String>,
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        // Stop the unit before touching the device, then undo our changes.
+        self.out = None;
+        self.release_hog();
+        self.restore_original_rate();
+    }
 }
 
 impl Engine {
@@ -312,10 +349,16 @@ impl Engine {
             segments: VecDeque::new(),
             no_prefetch: false,
             last_status: Instant::now(),
+            bit_perfect: false,
+            hog: false,
+            hogged: None,
+            restore_rate: None,
+            output_note: None,
         };
         if error.is_some() {
             engine.set_status(|s| s.error = error);
         }
+        engine.publish_output_mode();
         engine
     }
 
@@ -371,13 +414,16 @@ impl Engine {
                 }
             }
             Command::SetVolume(v) => {
+                // Remember the user's volume even in bit-perfect mode; it
+                // applies again when switching back to normal output.
                 self.volume = v.clamp(0.0, 1.0);
                 if let Some(o) = &self.out {
-                    o.shared.set_volume(self.volume);
+                    o.shared.set_volume(self.effective_volume());
                 }
                 let v = self.volume;
                 self.set_status(|s| s.volume = v);
             }
+            Command::SetOutputMode { bit_perfect, hog } => self.set_output_mode(bit_perfect, hog),
             Command::SetShuffle(on) => {
                 if let Some(q) = self.queue.as_mut() {
                     q.set_shuffle(on);
@@ -440,6 +486,8 @@ impl Engine {
 
     fn stop(&mut self) {
         self.out = None;
+        // Don't keep other apps locked out while nothing is playing.
+        self.release_hog();
         self.decoder = None;
         self.clear_pending();
         self.segments.clear();
@@ -489,7 +537,8 @@ impl Engine {
                         start_frame: self.frames_written(),
                         offset_frames,
                     });
-                    self.set_status(|s| s.error = last_error);
+                    let note = self.output_note.take();
+                    self.set_status(|s| s.error = last_error.or(note));
                     self.publish_track();
                     return;
                 }
@@ -544,11 +593,18 @@ impl Engine {
     fn open_output(&mut self, info: &StreamInfo) -> Result<(), String> {
         self.out = None; // stop the old unit before creating a new one
         self.samples_written = 0;
+        let unit_device = if self.bit_perfect {
+            self.prepare_bit_perfect_device(info.sample_rate)
+        } else {
+            self.device
+        };
         let capacity = ((info.sample_rate * f64::from(info.channels) * 0.5) as usize).max(4096);
         let (producer, consumer) = RingBuffer::<f32>::new(capacity);
-        let mut unit = OutputUnit::new(info, consumer, self.device).map_err(|e| e.to_string())?;
+        let mut unit = OutputUnit::new(info, consumer, unit_device).map_err(|e| e.to_string())?;
         let shared = unit.shared();
-        shared.set_volume(self.volume);
+        shared.set_volume(self.effective_volume());
+        let device_rate = self.target_device().and_then(|id| device::nominal_sample_rate(id).ok());
+        self.set_status(|s| s.device_rate = device_rate);
         let running = self.state == PlayState::Playing;
         if running {
             unit.start().map_err(|e| e.to_string())?;
@@ -562,6 +618,108 @@ impl Engine {
             running,
         });
         Ok(())
+    }
+
+    // ---- output mode (bit-perfect) ------------------------------------------
+
+    /// Software volume actually applied: bypassed (1.0) in bit-perfect mode.
+    fn effective_volume(&self) -> f32 {
+        if self.bit_perfect { 1.0 } else { self.volume }
+    }
+
+    /// The device audio goes to: the selected one, else the system default.
+    fn target_device(&self) -> Option<DeviceId> {
+        self.device.or_else(|| device::default_output_device().ok())
+    }
+
+    fn target_capable(&self) -> bool {
+        self.target_device()
+            .and_then(|id| device::transport_type(id).ok())
+            .is_some_and(device::bit_perfect_capable)
+    }
+
+    fn publish_output_mode(&self) {
+        let bp = self.bit_perfect;
+        let available = self.target_capable();
+        self.set_status(|s| {
+            s.bit_perfect = bp;
+            s.bit_perfect_available = available;
+        });
+    }
+
+    fn set_output_mode(&mut self, bit_perfect: bool, hog: bool) {
+        let changed = self.bit_perfect != bit_perfect || self.hog != hog;
+        self.bit_perfect = bit_perfect;
+        self.hog = hog;
+        let resume = changed && self.state != PlayState::Stopped && self.out.is_some();
+        let frames = self.position_frames();
+        if resume {
+            // The unit must be stopped before the device rate or hog changes.
+            self.out = None;
+        }
+        if !bit_perfect || !hog {
+            self.release_hog();
+        }
+        if !bit_perfect {
+            self.restore_original_rate();
+        }
+        if resume {
+            self.restart_current(frames);
+        } else if let Some(o) = &self.out {
+            o.shared.set_volume(self.effective_volume());
+        }
+        self.publish_output_mode();
+    }
+
+    /// Match the target device to `rate` (and take hog mode if asked) before
+    /// an output is opened. Returns the device the unit should use.
+    fn prepare_bit_perfect_device(&mut self, rate: f64) -> Option<DeviceId> {
+        let Some(id) = self.target_device() else {
+            return self.device;
+        };
+        let capable = device::transport_type(id).is_ok_and(device::bit_perfect_capable);
+        if !capable {
+            self.output_note = Some("bit-perfect is not available on this output device".into());
+            return self.device;
+        }
+        if self.hog {
+            match device::set_hog(id, true) {
+                Ok(()) => self.hogged = Some(id),
+                Err(e) => self.output_note = Some(format!("exclusive access failed: {e}")),
+            }
+        } else {
+            self.release_hog();
+        }
+        match device::available_sample_rates(id) {
+            Ok(ranges) if device::supports_rate(&ranges, rate) => {
+                if self.restore_rate.is_none_or(|(d, _)| d != id) {
+                    self.restore_original_rate();
+                    self.restore_rate = device::nominal_sample_rate(id).ok().map(|r| (id, r));
+                }
+                if let Err(e) = device::set_nominal_sample_rate(id, rate) {
+                    self.output_note = Some(format!("could not set {rate} Hz: {e}"));
+                }
+            }
+            _ => {
+                self.output_note =
+                    Some(format!("output device does not support {rate} Hz; resampling"));
+            }
+        }
+        Some(id)
+    }
+
+    fn release_hog(&mut self) {
+        if let Some(id) = self.hogged.take() {
+            let _ = device::set_hog(id, false);
+        }
+    }
+
+    fn restore_original_rate(&mut self) {
+        if let Some((id, rate)) = self.restore_rate.take()
+            && device::is_alive(id)
+        {
+            let _ = device::set_nominal_sample_rate(id, rate);
+        }
     }
 
     // ---- pumping ----------------------------------------------------------
@@ -707,6 +865,10 @@ impl Engine {
             if ev == DeviceEvent::DevicesChanged {
                 changed = true;
             }
+        }
+        if changed {
+            // The default output may now be a Bluetooth device, or no longer one.
+            self.publish_output_mode();
         }
         let Some(id) = self.device else {
             return;
