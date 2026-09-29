@@ -67,11 +67,9 @@ impl Library {
     ///
     /// Enables WAL mode and foreign keys, then creates the schema.
     pub fn open(path: &Path) -> Result<Self, LibraryError> {
-        let conn = Connection::open(path).map_err(LibraryError::Db)?;
-        conn.busy_timeout(Duration::from_secs(5))
-            .map_err(LibraryError::Db)?;
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(LibraryError::Db)?;
+        let conn = Connection::open(path)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
         Self::init(&conn)?;
         Ok(Library { conn })
     }
@@ -80,38 +78,29 @@ impl Library {
     ///
     /// WAL mode is not needed for in-memory databases.
     pub fn open_in_memory() -> Result<Self, LibraryError> {
-        let conn = Connection::open_in_memory().map_err(LibraryError::Db)?;
+        let conn = Connection::open_in_memory()?;
         Self::init(&conn)?;
         Ok(Library { conn })
     }
 
     /// Create tables and set `user_version = 1`.
     fn init(conn: &Connection) -> Result<(), LibraryError> {
-        conn.pragma_update(None, "foreign_keys", "ON")
-            .map_err(LibraryError::Db)?;
-        conn.execute_batch(SCHEMA).map_err(LibraryError::Db)?;
-        conn.pragma_update(None, "user_version", "1")
-            .map_err(LibraryError::Db)?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.execute_batch(SCHEMA)?;
+        conn.pragma_update(None, "user_version", "1")?;
         Ok(())
     }
 
     /// Register a folder. Returns the folder id (new or existing).
     pub fn add_folder(&self, path: &Path) -> Result<i64, LibraryError> {
-        let path_str = path.to_string_lossy().into_owned();
+        let path_str = path.to_string_lossy();
         self.conn
-            .execute(
-                "INSERT OR IGNORE INTO folders(path) VALUES (?1)",
-                params![&path_str],
-            )
-            .map_err(LibraryError::Db)?;
-        let id: i64 = self
-            .conn
-            .query_row(
-                "SELECT id FROM folders WHERE path = ?1",
-                params![&path_str],
-                |row| row.get(0),
-            )
-            .map_err(LibraryError::Db)?;
+            .execute("INSERT OR IGNORE INTO folders(path) VALUES (?1)", params![path_str])?;
+        let id = self.conn.query_row(
+            "SELECT id FROM folders WHERE path = ?1",
+            params![path_str],
+            |row| row.get(0),
+        )?;
         Ok(id)
     }
 
@@ -119,30 +108,19 @@ impl Library {
     ///
     /// Requires `foreign_keys=ON` so the cascade deletes tracks.
     pub fn remove_folder(&self, path: &Path) -> Result<(), LibraryError> {
-        let path_str = path.to_string_lossy().into_owned();
         self.conn
-            .execute(
-                "DELETE FROM folders WHERE path = ?1",
-                params![&path_str],
-            )
-            .map_err(LibraryError::Db)?;
+            .execute("DELETE FROM folders WHERE path = ?1", params![path.to_string_lossy()])?;
         Ok(())
     }
 
     /// Return all registered folders ordered by path.
     pub fn folders(&self) -> Result<Vec<(i64, PathBuf)>, LibraryError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, path FROM folders ORDER BY path")
-            .map_err(LibraryError::Db)?;
-        let rows = stmt
-            .query_map([], |row| {
-                let id: i64 = row.get(0)?;
-                let path: String = row.get(1)?;
-                Ok((id, PathBuf::from(path)))
-            })
-            .map_err(LibraryError::Db)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
+        let mut stmt = self.conn.prepare("SELECT id, path FROM folders ORDER BY path")?;
+        let rows = stmt.query_map([], |row| {
+            let path: String = row.get(1)?;
+            Ok((row.get(0)?, PathBuf::from(path)))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// File states for every track in *folder_id*.
@@ -152,18 +130,13 @@ impl Library {
     ) -> Result<HashMap<PathBuf, FileState>, LibraryError> {
         let mut stmt = self
             .conn
-            .prepare(
-                "SELECT path, mtime_ns, size FROM tracks WHERE folder_id = ?1",
-            )
-            .map_err(LibraryError::Db)?;
+            .prepare("SELECT path, mtime_ns, size FROM tracks WHERE folder_id = ?1")?;
         let rows = stmt.query_map(params![folder_id], |row| {
             let path: String = row.get(0)?;
-            let mtime_ns: i64 = row.get(1)?;
-            let size: i64 = row.get(2)?;
-            Ok((PathBuf::from(path), FileState { mtime_ns, size }))
-        }).map_err(LibraryError::Db)?;
-        rows.collect::<std::result::Result<HashMap<_, _>, _>>()
-            .map_err(LibraryError::Db)
+            let state = FileState { mtime_ns: row.get(1)?, size: row.get(2)? };
+            Ok((PathBuf::from(path), state))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Upsert a track row.
@@ -205,19 +178,14 @@ impl Library {
                 meta.channels.map(|v| v as i64),
                 meta.bitrate_kbps.map(|v| v as i64),
             ],
-        ).map_err(LibraryError::Db)?;
+        )?;
         Ok(())
     }
 
     /// Remove a single track by path.
     pub fn remove_track(&self, path: &Path) -> Result<(), LibraryError> {
-        let path_str = path.to_string_lossy().into_owned();
         self.conn
-            .execute(
-                "DELETE FROM tracks WHERE path = ?1",
-                params![&path_str],
-            )
-            .map_err(LibraryError::Db)?;
+            .execute("DELETE FROM tracks WHERE path = ?1", params![path.to_string_lossy()])?;
         Ok(())
     }
 
@@ -227,9 +195,7 @@ impl Library {
     /// This is useful in tests where multiple connections need to see the
     /// same data.
     pub fn checkpoint(&mut self) -> Result<(), LibraryError> {
-        self.conn
-            .execute_batch("PRAGMA wal_checkpoint(PASSIVE)")
-            .map_err(LibraryError::Db)?;
+        self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)")?;
         Ok(())
     }
 
@@ -237,8 +203,7 @@ impl Library {
     pub fn track_count(&self) -> Result<u64, LibraryError> {
         let count: i64 = self
             .conn
-            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
-            .map_err(LibraryError::Db)?;
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))?;
         Ok(count as u64)
     }
 
@@ -249,15 +214,10 @@ impl Library {
         &mut self,
         f: impl FnOnce(&Library) -> Result<T, LibraryError>,
     ) -> Result<T, LibraryError> {
-        self.conn
-            .execute_batch("BEGIN")
-            .map_err(LibraryError::Db)?;
-        let result = f(self);
-        match result {
+        self.conn.execute_batch("BEGIN")?;
+        match f(self) {
             Ok(v) => {
-                self.conn
-                    .execute_batch("COMMIT")
-                    .map_err(LibraryError::Db)?;
+                self.conn.execute_batch("COMMIT")?;
                 Ok(v)
             }
             Err(e) => {

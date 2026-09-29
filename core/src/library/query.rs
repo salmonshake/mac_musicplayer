@@ -105,26 +105,67 @@ fn track_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackRow> {
 }
 
 // ---------------------------------------------------------------------------
+// Query building
+// ---------------------------------------------------------------------------
+
+/// WHERE conditions and their positional parameters, built up piece by piece.
+#[derive(Default)]
+struct Conditions {
+    clauses: Vec<String>,
+    params: Vec<String>,
+}
+
+impl Conditions {
+    /// `column = ?` when `value` is set.
+    fn eq(&mut self, column: &str, value: &Option<String>) {
+        if let Some(v) = value {
+            self.clauses.push(format!("{column} = ?"));
+            self.params.push(v.clone());
+        }
+    }
+
+    /// Every whitespace-separated word must appear (substring, case-insensitive
+    /// for ASCII) in the title, artist, album or album artist.
+    fn search(&mut self, search: Option<&str>) {
+        const PER_WORD: &str = "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' \
+                                OR album LIKE ? ESCAPE '\\' OR album_artist LIKE ? ESCAPE '\\')";
+        for word in search.unwrap_or("").split_whitespace() {
+            self.clauses.push(PER_WORD.to_string());
+            let pattern = like_pattern(word);
+            self.params.extend(std::iter::repeat_n(pattern, 4));
+        }
+    }
+
+    /// `WHERE a AND b ...`, or an empty string when there are no conditions.
+    fn where_sql(&self) -> String {
+        if self.clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", self.clauses.join(" AND "))
+        }
+    }
+}
+
+/// Build a SQL LIKE pattern matching *word* as a substring.
+///
+/// Characters `%`, `_`, and `\` are escaped with a backslash.
+fn like_pattern(word: &str) -> String {
+    let mut s = String::from("%");
+    for c in word.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            s.push('\\');
+        }
+        s.push(c);
+    }
+    s.push('%');
+    s
+}
+
+// ---------------------------------------------------------------------------
 // Library methods (query.rs)
 // ---------------------------------------------------------------------------
 
 impl Library {
-    /// Build a SQL LIKE pattern from *word*.
-    ///
-    /// Characters `%`, `_`, and `\` are escaped with a backslash.
-    /// The result is wrapped in `%...%` so it matches substrings.
-    pub(crate) fn like_pattern(word: &str) -> String {
-        let mut s = String::from("%");
-        for c in word.chars() {
-            if c == '%' || c == '_' || c == '\\' {
-                s.push('\\');
-            }
-            s.push(c);
-        }
-        s.push('%');
-        s
-    }
-
     /// Return all tracks matching *f*.
     ///
     /// Ordering:
@@ -134,50 +175,11 @@ impl Library {
     ///   `CASE WHEN album_artist = '' THEN artist ELSE album_artist END COLLATE NOCASE,
     ///    album COLLATE NOCASE, disc_no IS NULL, disc_no, track_no IS NULL, track_no`
     pub fn list_tracks(&self, f: &TrackFilter) -> Result<Vec<TrackRow>, LibraryError> {
-        let mut conditions: Vec<String> = Vec::new();
-        let mut params: Vec<String> = Vec::new();
-
-        if let Some(ref key) = f.album_key {
-            conditions.push("album_key = ?".into());
-            params.push(key.clone());
-        }
-
-        if let Some(ref art) = f.artist {
-            conditions.push("artist = ?".into());
-            params.push(art.clone());
-        }
-
-        if let Some(ref genre) = f.genre {
-            conditions.push("genre = ?".into());
-            params.push(genre.clone());
-        }
-
-        if let Some(ref search) = f.search {
-            let words: Vec<&str> = search.split_whitespace().collect();
-            if !words.is_empty() {
-                let where_parts: Vec<String> = words
-                    .iter()
-                    .map(|_w| {
-                        "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' \
-                         OR album LIKE ? ESCAPE '\\' OR album_artist LIKE ? ESCAPE '\\')"
-                            .to_string()
-                    })
-                    .collect();
-                conditions.push(format!("({})", where_parts.join(" AND ")));
-                for w in &words {
-                    let p = Self::like_pattern(w);
-                    for _ in 0..4 {
-                        params.push(p.clone());
-                    }
-                }
-            }
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
+        let mut c = Conditions::default();
+        c.eq("album_key", &f.album_key);
+        c.eq("artist", &f.artist);
+        c.eq("genre", &f.genre);
+        c.search(f.search.as_deref());
 
         let order_by = if f.album_key.is_some() {
             "disc_no IS NULL, disc_no, track_no IS NULL, track_no, title COLLATE NOCASE"
@@ -185,109 +187,72 @@ impl Library {
             "CASE WHEN album_artist = '' THEN artist ELSE album_artist END COLLATE NOCASE, \
              album COLLATE NOCASE, disc_no IS NULL, disc_no, track_no IS NULL, track_no"
         };
+        let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks {} ORDER BY {order_by}", c.where_sql());
 
-        let sql = format!(
-            "SELECT {TRACK_COLUMNS} FROM tracks {} ORDER BY {}",
-            where_clause, order_by
-        );
-
-        let mut stmt = self.conn.prepare(&sql).map_err(LibraryError::Db)?;
-        let rows = stmt.query_map(params_from_iter(params.iter()), track_from_row).map_err(LibraryError::Db)?;
-
-        rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(c.params.iter()), track_from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Return all albums, optionally filtered by *search*.
     ///
     /// Groups by `album_key`.  `album_artist` uses the effective value.
     pub fn list_albums(&self, search: Option<&str>) -> Result<Vec<AlbumRow>, LibraryError> {
-        let mut conditions: Vec<String> = Vec::new();
-        let mut params: Vec<String> = Vec::new();
-
-        if let Some(s) = search {
-            let words: Vec<&str> = s.split_whitespace().collect();
-            if !words.is_empty() {
-                let clause = "(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' \
-                              OR album LIKE ? ESCAPE '\\' OR album_artist LIKE ? ESCAPE '\\')";
-                let where_parts: Vec<String> = words
-                    .iter()
-                    .map(|_w| clause.to_string())
-                    .collect();
-                conditions.push(format!("({})", where_parts.join(" AND ")));
-                for w in &words {
-                    let p = Self::like_pattern(w);
-                    for _ in 0..4 {
-                        params.push(p.clone());
-                    }
-                }
-            }
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
+        let mut c = Conditions::default();
+        c.search(search);
         let sql = format!(
             "SELECT album_key, MAX(album), \
              MAX(CASE WHEN album_artist = '' THEN artist ELSE album_artist END), \
              MAX(year), COUNT(*), SUM(duration_ms) \
              FROM tracks {} GROUP BY album_key \
              ORDER BY 3 COLLATE NOCASE, 2 COLLATE NOCASE",
-            where_clause
+            c.where_sql()
         );
 
-        let mut stmt = self.conn.prepare(&sql).map_err(LibraryError::Db)?;
-        let rows = stmt.query_map(params_from_iter(params.iter()), |row| {
-            let album_key: String = row.get(0)?;
-            let album: String = row.get(1)?;
-            let album_artist: String = row.get(2)?;
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(c.params.iter()), |row| {
             let year: Option<i64> = row.get(3)?;
             let track_count: i64 = row.get(4)?;
             let duration_ms: i64 = row.get(5)?;
-
             Ok(AlbumRow {
-                album_key,
-                album,
-                album_artist,
+                album_key: row.get(0)?,
+                album: row.get(1)?,
+                album_artist: row.get(2)?,
                 year: year.and_then(|v| u32::try_from(v).ok()),
                 track_count: track_count as u32,
                 duration_ms: duration_ms as u64,
             })
-        }).map_err(LibraryError::Db)?;
-
-        rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Return all artists ordered alphabetically (case-insensitive).
     ///
     /// Excludes empty artist strings.
     pub fn list_artists(&self) -> Result<Vec<(String, u32)>, LibraryError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT artist, COUNT(*) FROM tracks WHERE artist <> '' GROUP BY artist ORDER BY artist COLLATE NOCASE",
-        ).map_err(LibraryError::Db)?;
-        let rows = stmt.query_map([], |row| {
-            let artist: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
-            Ok((artist, count as u32))
-        }).map_err(LibraryError::Db)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
+        self.counts_by(Grouping::Artist)
     }
 
     /// Return all genres ordered alphabetically (case-insensitive).
     ///
     /// Excludes empty genre strings.
     pub fn list_genres(&self) -> Result<Vec<(String, u32)>, LibraryError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT genre, COUNT(*) FROM tracks WHERE genre <> '' GROUP BY genre ORDER BY genre COLLATE NOCASE",
-        ).map_err(LibraryError::Db)?;
+        self.counts_by(Grouping::Genre)
+    }
+
+    /// (value, track count) for each non-empty value of a column.
+    fn counts_by(&self, g: Grouping) -> Result<Vec<(String, u32)>, LibraryError> {
+        let col = g.column();
+        let sql = format!(
+            "SELECT {col}, COUNT(*) FROM tracks WHERE {col} <> '' \
+             GROUP BY {col} ORDER BY {col} COLLATE NOCASE"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], |row| {
-            let genre: String = row.get(0)?;
             let count: i64 = row.get(1)?;
-            Ok((genre, count as u32))
-        }).map_err(LibraryError::Db)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(LibraryError::Db)
+            Ok((row.get(0)?, count as u32))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Resolve playlist paths to track rows in the DB.
@@ -297,15 +262,31 @@ impl Library {
     /// the original order.
     pub fn tracks_by_paths(&self, paths: &[PathBuf]) -> Result<Vec<(usize, TrackRow)>, LibraryError> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1");
-        let mut stmt = self.conn.prepare(&sql).map_err(LibraryError::Db)?;
+        let mut stmt = self.conn.prepare(&sql)?;
         let mut out = Vec::new();
         for (i, p) in paths.iter().enumerate() {
             let key = p.to_string_lossy();
-            if let Some(t) = stmt.query_row([key.as_ref()], track_from_row).optional().map_err(LibraryError::Db)? {
+            if let Some(t) = stmt.query_row([key.as_ref()], track_from_row).optional()? {
                 out.push((i, t));
             }
         }
         Ok(out)
+    }
+}
+
+/// Columns `counts_by` may group on (kept closed so no SQL is built from input).
+#[derive(Clone, Copy)]
+enum Grouping {
+    Artist,
+    Genre,
+}
+
+impl Grouping {
+    fn column(self) -> &'static str {
+        match self {
+            Grouping::Artist => "artist",
+            Grouping::Genre => "genre",
+        }
     }
 }
 
@@ -858,7 +839,7 @@ mod tests {
             ("a\\b", "%a\\\\b%"),
         ];
         for (input, expected) in patterns {
-            assert_eq!(Library::like_pattern(input), expected);
+            assert_eq!(like_pattern(input), expected);
         }
         // Verify list_tracks works with empty filter (no query errors).
         assert!(lib.list_tracks(&TrackFilter::default()).is_ok());
