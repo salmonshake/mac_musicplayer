@@ -98,28 +98,23 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                                 state.player.set_shuffle(!state.now.shuffle);
                             }
 
-                            if ui.add_enabled(has_track, egui::Button::new(icon("⏮", 20.0, false, accent, normal)).frame(false))
+                            if crate::ui::icons::icon_button(ui, 22.0, has_track, |p, r, c| crate::ui::icons::skip(p, r, c, false))
                                 .on_hover_text("Previous")
                                 .clicked()
                             {
                                 state.player.prev();
                             }
-
-                            let play_btn = egui::Button::new(icon(
-                                if playing { "⏸" } else { "▶" },
-                                28.0,
-                                false,
-                                accent,
-                                normal,
-                            )).frame(false);
-                            if ui.add_enabled(has_track, play_btn)
-                                .on_hover_text(if playing { "Pause" } else { "Play" })
-                                .clicked()
-                            {
+                            let play_resp = crate::ui::icons::icon_button(ui, 34.0, has_track, |p, r, c| {
+                                if playing {
+                                    crate::ui::icons::pause(p, r, c)
+                                } else {
+                                    crate::ui::icons::play(p, r, c)
+                                }
+                            });
+                            if play_resp.on_hover_text(if playing { "Pause" } else { "Play" }).clicked() {
                                 state.player.toggle_pause();
                             }
-
-                            if ui.add_enabled(has_track, egui::Button::new(icon("⏭", 20.0, false, accent, normal)).frame(false))
+                            if crate::ui::icons::icon_button(ui, 22.0, has_track, |p, r, c| crate::ui::icons::skip(p, r, c, true))
                                 .on_hover_text("Next")
                                 .clicked()
                             {
