@@ -38,6 +38,16 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.item_spacing = vec2(10.0, 8.0);
         s.spacing.button_padding = vec2(10.0, 5.0);
         s.spacing.interact_size.y = 26.0;
+        // Rounded look throughout (user request).
+        let r = egui::CornerRadius::same(8);
+        s.visuals.widgets.noninteractive.corner_radius = r;
+        s.visuals.widgets.inactive.corner_radius = r;
+        s.visuals.widgets.hovered.corner_radius = r;
+        s.visuals.widgets.active.corner_radius = r;
+        s.visuals.widgets.open.corner_radius = r;
+        s.visuals.window_corner_radius = egui::CornerRadius::same(12);
+        s.visuals.menu_corner_radius = egui::CornerRadius::same(10);
+        s.visuals.handle_shape = egui::style::HandleShape::Circle;
     });
 }
 
