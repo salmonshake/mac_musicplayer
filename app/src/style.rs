@@ -59,3 +59,41 @@ pub fn subtle_fill(ui: &egui::Ui, alpha: u8) -> egui::Color32 {
         egui::Color32::from_rgba_unmultiplied(0, 0, 0, alpha)
     }
 }
+
+/// Accent for filled badges: white text on it has about 5.7:1 contrast (WCAG AA).
+pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(26, 100, 200);
+
+/// Accent for text and icons on the window background (at least 4.5:1 on both themes).
+pub fn accent_text(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::from_rgb(110, 168, 255)
+    } else {
+        ACCENT
+    }
+}
+
+/// Row tint for the playing track; stronger when the row is also selected.
+pub fn playing_fill(ui: &egui::Ui, selected: bool) -> egui::Color32 {
+    let a = match (ui.visuals().dark_mode, selected) {
+        (true, false) => 70,
+        (true, true) => 115,
+        (false, false) => 38,
+        (false, true) => 70,
+    };
+    egui::Color32::from_rgba_unmultiplied(26, 100, 200, a)
+}
+
+/// Small rounded pill with white text on ACCENT, sized to its text.
+pub fn badge(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::proportional(10.5),
+        egui::Color32::WHITE,
+    );
+    let size = galley.size() + egui::vec2(12.0, 4.0);
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+    ui.set_clip_rect(rect);
+    ui.painter().rect_filled(rect, rect.height() / 2.0, ACCENT);
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, egui::Color32::WHITE);
+    resp
+}

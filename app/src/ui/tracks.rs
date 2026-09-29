@@ -5,6 +5,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::state::AppState;
 use crate::style::{HEADER_HEIGHT, ROW_HEIGHT};
+use crate::ui::icons;
 
 /// Private enum for track-list context-menu actions.
 enum RowAction {
@@ -44,12 +45,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
     }
     let tracks = &state.tracks;
     // Row backgrounds are drawn by us (rounded); see the rows closure.
-    let accent = ui.visuals().selection.bg_fill;
+    let accent_text = crate::style::accent_text(ui);
+    let play_fill = crate::style::playing_fill(ui, false);
+    let play_sel_fill = crate::style::playing_fill(ui, true);
     let sel_fill = crate::style::subtle_fill(ui, 36);
     let stripe_fill = crate::style::subtle_fill(ui, 8);
     let hover_fill = crate::style::subtle_fill(ui, 18);
-    let play_fill = accent.gamma_multiply(0.28);
-    let play_sel_fill = accent.gamma_multiply(0.42);
     let row_x = ui.max_rect().x_range();
     // Disable egui_extras' square hover fill; we paint our own.
     ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
@@ -106,33 +107,26 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                 let idx = p.add(egui::Shape::Noop);
                 bg = Some((p, idx));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            t.track_no.map(|n| n.to_string()).unwrap_or_default(),
-                        )
-                        .monospace(),
-                    );
-                });
-            });
-            // Title column: center, show "PLAYING" badge when this track is active.
-            row.col(|ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    let title = if is_playing {
-                        egui::RichText::new(&t.title).color(accent).strong()
-                    } else {
-                        egui::RichText::new(&t.title)
-                    };
-                    ui.label(title);
                     if is_playing {
-                        egui::Frame::new()
-                            .fill(accent)
-                            .corner_radius(6)
-                            .inner_margin(egui::Margin::symmetric(6, 1))
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new("PLAYING").small().strong().color(egui::Color32::WHITE));
-                            });
+                        // Not colour alone: the playing row also gets a play icon.
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        icons::play(ui.painter(), r, accent_text);
+                    } else {
+                        ui.label(
+                            egui::RichText::new(t.track_no.map(|n| n.to_string()).unwrap_or_default())
+                                .monospace(),
+                        );
                     }
                 });
+            });
+            // Title column: center.
+            row.col(|ui| {
+                let title = if is_playing {
+                    egui::RichText::new(&t.title).strong()
+                } else {
+                    egui::RichText::new(&t.title)
+                };
+                ui.label(title);
             });
             // Length column: right-aligned
             row.col(|ui| {
@@ -140,10 +134,19 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     ui.label(format_duration(t.duration_ms));
                 });
             });
-            // Artist column: center, show "Unknown Artist" in weak when empty.
+            // Artist column: the PLAYING badge follows the name (as in the mockup).
             row.col(|ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.label(or_unknown(&t.artist, "Unknown Artist"));
+                    // Keep room for the badge so a long name is truncated, not the badge.
+                    let reserve = if is_playing { 72.0 } else { 0.0 };
+                    let w = (ui.available_width() - reserve).max(24.0);
+                    ui.scope(|ui| {
+                        ui.set_max_width(w);
+                        ui.add(egui::Label::new(or_unknown(&t.artist, "Unknown Artist")).truncate());
+                    });
+                    if is_playing {
+                        crate::style::badge(ui, "PLAYING");
+                    }
                 });
             });
             if show_album_column {
