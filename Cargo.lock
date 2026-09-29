@@ -1666,6 +1666,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2064,6 +2066,7 @@ dependencies = [
 name = "mmp-core"
 version = "0.1.0"
 dependencies = [
+ "image",
  "lofty",
  "notify",
  "objc2-audio-toolbox",

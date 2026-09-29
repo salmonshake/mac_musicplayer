@@ -820,3 +820,21 @@
 - **9.2** `app/src/media.rs`: `pub struct MediaKeys { controls, rx }`、`pub fn new(ctx: egui::Context) -> Option<Self>`、`pub fn poll_events(&self) -> Vec<MediaControlEvent>`
 - **9.3** `app/src/media.rs`: `MediaKeys::update(&mut self, now: &PlayerStatus, track: Option<&TrackRow>)`（前回値を覚えて変化時だけ OS に送る）
 - **9.4** `app/src/main.rs` + `app/src/state.rs`: `MmpApp` に `media: Option<MediaKeys>`、`logic()` で poll_events → `AppState::apply_media_action(MediaAction)` → `update`
+
+## 段階10: アートワークキャッシュ
+
+設計:
+- 表示場所（モックアップ）: アルバム詳細のヘッダー（160px）、プレイヤーバー左（56px）。サムネイルは Retina 用に最大 320px
+- 取得元: 埋め込み画像（lofty。CoverFront 優先、無ければ最初の画像）→ 無ければ同じフォルダの cover / folder / front / album（.jpg/.jpeg/.png、大文字小文字無視）
+- ディスクキャッシュ: `~/Library/Application Support/MacMusicPlay/artwork/<key>.jpg`（JPEG 品質 85）。key = album_key の FNV-1a 64bit 16進（std の Hasher は実行ごとに安定しないため自前）。画像が無いアルバムは `<key>.none` を置いて再探索しない。書き込みは tmp → rename。DB と同じくキャッシュ扱い（消しても再生成）
+- 生成・読み込みはバックグラウンドスレッド（mpsc で依頼 / 結果）。UI スレッドはデコード済み RGBA を受け取ってテクスチャにするだけ
+- メモリ: app 側で album_key → TextureHandle の LRU（上限 200）。読み込み中は二重依頼しない
+- 依存: `image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }`（core、指揮役が追加）
+
+タスク:
+- **10.1** `core/src/artwork/source.rs`: `embedded_picture(path) -> Option<Vec<u8>>`、`folder_image(dir) -> Option<PathBuf>`、`find_artwork_bytes(track) -> Option<Vec<u8>>` + テスト
+- **10.2** `core/src/artwork/thumb.rs`: `THUMB_SIZE = 320`、`make_thumbnail_jpeg(bytes, max) -> Option<Vec<u8>>`、`decode_rgba(bytes) -> Option<Thumb>`（`Thumb { width, height, rgba }`）+ テスト
+- **10.3** `core/src/artwork/cache.rs`: `cache_key(album_key) -> String`（FNV-1a）、`ArtworkCache { dir }`、`get_or_create(album_key, track) -> Option<Vec<u8>>` + テスト
+- **10.4** `core/src/artwork/loader.rs` + `core/src/paths.rs`: `ArtworkLoader`（スレッド + mpsc、`request` / `try_results`）、`artwork_dir()` + テスト
+- **10.5** `app/src/artwork.rs` + `app/src/state.rs`: `ArtTextures`（LRU、`get` / `poll`）、AppState に保持、`poll` から呼ぶ + 退避ロジックのテスト
+- **10.6** `app/src/ui/albums.rs` + `app/src/ui/player_bar.rs`: アルバム詳細ヘッダー 160px とプレイヤーバー 56px に表示（無ければ今のプレースホルダー）
