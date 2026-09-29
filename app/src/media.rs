@@ -11,6 +11,7 @@ use std::time::Duration;
 /// Seek step for Seek(Forward/Backward) events.
 const SEEK_STEP_MS: u64 = 10_000;
 
+/// A play-control request, from media keys, Now Playing or the keyboard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaAction {
     Play,
@@ -32,6 +33,14 @@ pub fn media_action(
     duration_ms: u64,
 ) -> Option<MediaAction> {
     use MediaAction as M;
+    // Clamp to the track length only when it is known.
+    let clamp = |ms: u64| if duration_ms > 0 { ms.min(duration_ms) } else { ms };
+    let seek = |dir: &SeekDirection, by: u64| {
+        M::SeekTo(match dir {
+            SeekDirection::Forward => clamp(position_ms.saturating_add(by)),
+            SeekDirection::Backward => position_ms.saturating_sub(by),
+        })
+    };
     Some(match ev {
         MediaControlEvent::Play => M::Play,
         MediaControlEvent::Pause => M::Pause,
@@ -39,28 +48,9 @@ pub fn media_action(
         MediaControlEvent::Next => M::Next,
         MediaControlEvent::Previous => M::Prev,
         MediaControlEvent::Stop => M::Stop,
-        MediaControlEvent::Seek(dir) => match dir {
-            SeekDirection::Forward => {
-                M::SeekTo(position_ms.saturating_add(SEEK_STEP_MS).min(duration_ms))
-            }
-            SeekDirection::Backward => {
-                M::SeekTo(position_ms.saturating_sub(SEEK_STEP_MS))
-            }
-        },
-        MediaControlEvent::SeekBy(dir, d) => {
-            let ms = d.as_millis() as u64;
-            match dir {
-                SeekDirection::Forward => {
-                    M::SeekTo(position_ms.saturating_add(ms).min(duration_ms))
-                }
-                SeekDirection::Backward => {
-                    M::SeekTo(position_ms.saturating_sub(ms))
-                }
-            }
-        }
-        MediaControlEvent::SetPosition(p) => {
-            M::SeekTo((p.0.as_millis() as u64).min(duration_ms))
-        }
+        MediaControlEvent::Seek(dir) => seek(dir, SEEK_STEP_MS),
+        MediaControlEvent::SeekBy(dir, d) => seek(dir, d.as_millis() as u64),
+        MediaControlEvent::SetPosition(p) => M::SeekTo(clamp(p.0.as_millis() as u64)),
         // These events are handled by souvlaki internally or not mapped.
         MediaControlEvent::SetVolume(_)
         | MediaControlEvent::OpenUri(_)
@@ -190,6 +180,19 @@ mod tests {
                 position,
                 duration
             ),
+            Some(MediaAction::SeekTo(30_000))
+        );
+    }
+
+    #[test]
+    fn test_media_action_seek_unknown_duration() {
+        // Duration 0 means "unknown": don't clamp forward seeks to 0.
+        assert_eq!(
+            media_action(&MediaControlEvent::Seek(SeekDirection::Forward), 5_000, 0),
+            Some(MediaAction::SeekTo(15_000))
+        );
+        assert_eq!(
+            media_action(&MediaControlEvent::SetPosition(MediaPosition(Duration::from_secs(30))), 0, 0),
             Some(MediaAction::SeekTo(30_000))
         );
     }

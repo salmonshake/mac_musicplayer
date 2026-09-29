@@ -1,8 +1,73 @@
 //! Development screenshot capture: environment variable `MMP_SCREENSHOT` triggers
 //! a single PNG output, then the app closes itself.
+//!
+//! With `MMP_SCREENSHOT` set, these also shape what is captured:
+//! - `MMP_THEME=light|dark` — theme (not saved)
+//! - `MMP_NAV=albums|artists|genres|album` — view (`album` = the first album)
+//! - `MMP_PLAY=<row>` — play that row of the view, muted
+//! - `MMP_SELECT=<row>` — select that row
 
 use eframe::egui;
+use mmp_core::settings::ThemeMode;
 use std::path::PathBuf;
+
+use crate::state::{self, AppState, Nav};
+
+/// Screenshot capture plus the view set-up requested by environment variables.
+pub struct DevHooks {
+    shot: Screenshotter,
+    open_album: bool,
+    play: Option<usize>,
+    select: Option<usize>,
+}
+
+impl DevHooks {
+    /// Returns `Some` only when `MMP_SCREENSHOT` is set.
+    pub fn from_env() -> Option<Self> {
+        let shot = Screenshotter::from_env()?;
+        let index = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok());
+        Some(Self {
+            shot,
+            open_album: std::env::var("MMP_NAV").is_ok_and(|v| v == "album"),
+            play: index("MMP_PLAY"),
+            select: index("MMP_SELECT"),
+        })
+    }
+
+    /// Theme and list views, applied once at startup.
+    pub fn apply_startup(&self, ctx: &egui::Context, s: &mut AppState) {
+        if let Some(t) = std::env::var("MMP_THEME").ok().and_then(|v| ThemeMode::from_str_opt(&v)) {
+            ctx.set_theme(state::theme_pref(t));
+        }
+        match std::env::var("MMP_NAV").as_deref() {
+            Ok("albums") => s.set_nav(Nav::Albums),
+            Ok("artists") => s.set_nav(Nav::Artists),
+            Ok("genres") => s.set_nav(Nav::Genres),
+            _ => {}
+        }
+    }
+
+    /// Call every frame. Once the initial scan is done (its reload clears the
+    /// selection) opens the album and plays / selects rows, then captures.
+    pub fn tick(&mut self, ctx: &egui::Context, s: &mut AppState) {
+        if !s.scanning {
+            if std::mem::take(&mut self.open_album) {
+                s.set_nav(Nav::Albums);
+                if let Some(k) = s.albums.first().map(|a| a.album_key.clone()) {
+                    s.set_nav(Nav::Album(k));
+                }
+            }
+            if let Some(i) = self.play.take() {
+                s.player.set_volume(0.0);
+                s.play_from(i);
+            }
+            if let Some(i) = self.select.take() {
+                s.selected_track = Some(i);
+            }
+        }
+        self.shot.tick(ctx, s.scanning);
+    }
+}
 
 /// Captures one screenshot when the `MMP_SCREENSHOT` environment variable is set.
 pub struct Screenshotter {

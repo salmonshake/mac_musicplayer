@@ -95,7 +95,6 @@ pub fn badge(ui: &mut egui::Ui, text: &str) -> egui::Response {
     );
     let size = galley.size() + egui::vec2(12.0, 4.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
-    ui.set_clip_rect(rect);
     ui.painter().rect_filled(rect, rect.height() / 2.0, ACCENT);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, egui::Color32::WHITE);
     resp

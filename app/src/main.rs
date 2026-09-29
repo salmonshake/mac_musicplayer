@@ -8,124 +8,85 @@ mod ui;
 
 use eframe::egui;
 
+use media::MediaAction;
+use state::{AppState, Nav};
+
 struct MmpApp {
-    state: Result<state::AppState, String>,
-    shot: Option<screenshot::Screenshotter>,
-    pending_album: bool,
-    pending_play: Option<usize>,
-    pending_select: Option<usize>,
+    state: Result<AppState, String>,
     media: Option<media::MediaKeys>,
+    dev: Option<screenshot::DevHooks>,
 }
 
 impl eframe::App for MmpApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Ok(app_state) = &mut self.state {
-            app_state.poll(ctx);
-        }
-        if let (Some(m), Ok(s)) = (&mut self.media, &mut self.state) {
+        let Ok(s) = &mut self.state else {
+            return;
+        };
+        s.poll(ctx);
+        if let Some(m) = &mut self.media {
             for ev in m.poll_events() {
-                let dur = s.now_track().map(|t| t.duration_ms).unwrap_or(0);
+                let dur = s.now_track().map_or(0, |t| t.duration_ms);
                 if let Some(a) = media::media_action(&ev, s.now.position_ms, dur) {
                     s.apply_media_action(a);
                 }
             }
             m.update(&s.now, s.now_track());
         }
-        if let (Some(shot), Ok(s)) = (&mut self.shot, &mut self.state) {
-            // Dev hooks: applied after the scan's reload, which clears the selection.
-            let pending = (self.pending_play.take(), self.pending_select.take());
-            if self.pending_album && !s.scanning {
-                self.pending_album = false;
-                if s.nav != state::Nav::Albums {
-                    s.set_nav(state::Nav::Albums);
-                }
-                if let Some(k) = s.albums.first().map(|a| a.album_key.clone()) {
-                    s.set_nav(state::Nav::Album(k));
-                }
-            }
-            if !s.scanning {
-                if let Some(i) = pending.0 {
-                    s.player.set_volume(0.0);
-                    s.play_from(i);
-                }
-                if let Some(i) = pending.1 {
-                    s.selected_track = Some(i);
-                }
-            } else {
-                self.pending_play = pending.0;
-                self.pending_select = pending.1;
-            }
-            shot.tick(ctx, s.scanning);
+        if let Some(dev) = &mut self.dev {
+            dev.tick(ctx, s);
         }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Keyboard shortcuts (before panels so they work regardless of focus).
-        if let Ok(s) = &mut self.state {
-            let typing = ui.ctx().egui_wants_keyboard_input();
-            let (space, next, prev) = ui.input(|i| {
-                (i.key_pressed(egui::Key::Space),
-                 i.modifiers.command && i.key_pressed(egui::Key::ArrowRight),
-                 i.modifiers.command && i.key_pressed(egui::Key::ArrowLeft))
-            });
-            if space && !typing {
-                s.apply_media_action(media::MediaAction::Toggle);
+        let s = match &mut self.state {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = format!("Error: {e}");
+                egui::CentralPanel::default().show(ui, |ui| ui.label(msg));
+                return;
             }
-            if next {
-                s.player.next();
-            }
-            if prev {
-                s.player.prev();
-            }
-        }
-        // Toolbar (top panel)
-        if let Ok(s) = &mut self.state {
-            ui::toolbar::show(ui, s);
-        }
-        // Player bar (bottom panel — must be shown before other panels)
-        if let Ok(s) = &mut self.state {
-            ui::player_bar::show(ui, s);
-        }
-        // Sidebar (left panel)
-        if let Ok(s) = &mut self.state {
-            ui::sidebar::show(ui, s);
-        }
-        // Up Next (right panel)
-        if let Ok(s) = &mut self.state
-            && s.show_queue
-        {
+        };
+        // Before the panels so shortcuts work regardless of focus.
+        shortcuts(ui, s);
+        // Side panels first (the bottom bar before the others), then the centre.
+        ui::toolbar::show(ui, s);
+        ui::player_bar::show(ui, s);
+        ui::sidebar::show(ui, s);
+        if s.show_queue {
             ui::queue::show(ui, s);
         }
-        // Central panel
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(ui.style()).inner_margin(16.0))
-            .show(ui, |ui| {
-                match &mut self.state {
-                    Ok(s) => match s.nav.clone() {
-                        state::Nav::AllTracks
-                        | state::Nav::Artist(_)
-                        | state::Nav::Genre(_)
-                        | state::Nav::Playlist(_) => {
-                            ui::tracks::show(ui, s, true);
-                        }
-                    state::Nav::Albums => {
-                        ui::albums::show_albums(ui, s);
-                    }
-                    state::Nav::Album(k) => {
-                        ui::albums::show_album(ui, s, &k);
-                    }
-                    state::Nav::Artists => {
-                        ui::albums::show_artists(ui, s);
-                    }
-                    state::Nav::Genres => {
-                        ui::albums::show_genres(ui, s);
-                    }
-                },
-                Err(e) => {
-                    ui.label(format!("Error: {e}"));
+            .show(ui, |ui| match s.nav.clone() {
+                Nav::AllTracks | Nav::Artist(_) | Nav::Genre(_) | Nav::Playlist(_) => {
+                    ui::tracks::show(ui, s, true);
                 }
-            }
-        });
+                Nav::Albums => ui::albums::show_albums(ui, s),
+                Nav::Album(k) => ui::albums::show_album(ui, s, &k),
+                Nav::Artists => ui::albums::show_artists(ui, s),
+                Nav::Genres => ui::albums::show_genres(ui, s),
+            });
+    }
+}
+
+/// Space: play/pause (not while typing); ⌘→ / ⌘←: next / previous.
+fn shortcuts(ui: &egui::Ui, s: &mut AppState) {
+    let typing = ui.ctx().egui_wants_keyboard_input();
+    let (space, next, prev) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Space),
+            i.modifiers.command && i.key_pressed(egui::Key::ArrowRight),
+            i.modifiers.command && i.key_pressed(egui::Key::ArrowLeft),
+        )
+    });
+    if space && !typing {
+        s.apply_media_action(MediaAction::Toggle);
+    }
+    if next {
+        s.apply_media_action(MediaAction::Next);
+    }
+    if prev {
+        s.apply_media_action(MediaAction::Prev);
     }
 }
 
@@ -142,55 +103,18 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             style::apply(&cc.egui_ctx);
-            let found = fonts::install_cjk_fonts(&cc.egui_ctx);
-            if found.is_none() {
+            if fonts::install_cjk_fonts(&cc.egui_ctx).is_none() {
                 eprintln!("CJK font not found");
             }
-            let opened = state::AppState::open(&cc.egui_ctx).map_err(|e| e.to_string());
-            let shot = screenshot::Screenshotter::from_env();
-            let pending_album = shot.is_some()
-                && std::env::var("MMP_NAV")
-                    .map(|v| v == "album")
-                    .unwrap_or(false);
-            let env_index = |k: &str| {
-                std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok())
-            };
-            let pending_play = if shot.is_some() {
-                env_index("MMP_PLAY")
-            } else {
-                None
-            };
-            let pending_select = if shot.is_some() {
-                env_index("MMP_SELECT")
-            } else {
-                None
-            };
-            let media = media::MediaKeys::new(cc.egui_ctx.clone());
-            let app_state = match opened {
-                Ok(mut s) => {
-                    if let Some(t) = std::env::var("MMP_THEME")
-                        .ok()
-                        .and_then(|v| mmp_core::settings::ThemeMode::from_str_opt(&v))
-                    {
-                        cc.egui_ctx.set_theme(state::theme_pref(t));
-                    }
-                    match std::env::var("MMP_NAV").as_deref() {
-                        Ok("albums") => s.set_nav(state::Nav::Albums),
-                        Ok("artists") => s.set_nav(state::Nav::Artists),
-                        Ok("genres") => s.set_nav(state::Nav::Genres),
-                        _ => {}
-                    }
-                    Ok(s)
-                }
-                Err(e) => Err(e),
-            };
+            let dev = screenshot::DevHooks::from_env();
+            let mut state = AppState::open(&cc.egui_ctx);
+            if let (Some(dev), Ok(s)) = (&dev, &mut state) {
+                dev.apply_startup(&cc.egui_ctx, s);
+            }
             Ok(Box::new(MmpApp {
-                state: app_state,
-                shot,
-                pending_album,
-                pending_play,
-                pending_select,
-                media,
+                state,
+                media: media::MediaKeys::new(cc.egui_ctx.clone()),
+                dev,
             }))
         }),
     )
