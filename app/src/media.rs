@@ -81,8 +81,8 @@ impl MediaKeys {
     /// Registers with the OS. Returns None if the platform refuses.
     pub fn new(ctx: egui::Context) -> Option<Self> {
         let config = PlatformConfig {
-            display_name: "MacMusicPlay",
-            dbus_name: "macmusicplay",
+            display_name: "Maplay",
+            dbus_name: "maplay",
             hwnd: None,
         };
         let mut controls = MediaControls::new(config).ok()?;

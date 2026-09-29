@@ -1,4 +1,4 @@
-//! UI modules for the MacMusicPlay application.
+//! UI modules for the Maplay application.
 
 pub mod albums;
 pub mod icons;
