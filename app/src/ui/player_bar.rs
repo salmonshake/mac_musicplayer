@@ -34,8 +34,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             ui.scope_builder(
                 egui::UiBuilder::new().max_rect(left).layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |ui| {
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, 6.0, egui::Color32::from_white_alpha(20));
+                    let now = state.now_track().map(|t| (t.album_key.clone(), t.path.clone()));
+                    let tex = now.and_then(|(k, p)| state.art.get(&k, &p));
+                    crate::artwork::art_image(ui, tex.as_ref(), 56.0);
                     ui.add_space(12.0);
                     ui.vertical(|ui| {
                         ui.add_space(6.0);

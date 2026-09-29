@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Maximum number of artwork textures kept in memory.
-#[allow(dead_code)]
 pub const MAX_TEXTURES: usize = 200;
 
 struct Entry {
@@ -20,7 +19,6 @@ struct Entry {
 pub struct ArtTextures {
     loader: Option<ArtworkLoader>,
     entries: HashMap<String, Entry>,
-    #[allow(dead_code)]
     tick: u64,
     cap: usize,
 }
@@ -38,7 +36,6 @@ impl ArtTextures {
     }
 
     /// Texture for the album if loaded; otherwise requests it once and returns None.
-    #[allow(dead_code)]
     pub fn get(&mut self, album_key: &str, track: &Path) -> Option<egui::TextureHandle> {
         self.tick += 1;
         if let Some(e) = self.entries.get_mut(album_key) {
@@ -88,6 +85,23 @@ fn evict(entries: &mut HashMap<String, Entry>, cap: usize) {
                 entries.remove(&k);
             }
             None => break,
+        }
+    }
+}
+
+/// Draws album artwork in a size x size square (fitted, rounded), or a placeholder.
+pub fn art_image(ui: &mut egui::Ui, tex: Option<&egui::TextureHandle>, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let radius = (size * 0.06).max(4.0);
+    match tex {
+        Some(t) => {
+            let s = t.size_vec2();
+            let scale = size / s.x.max(s.y).max(1.0);
+            let fitted = egui::Rect::from_center_size(rect.center(), s * scale);
+            egui::Image::new(t).corner_radius(radius).paint_at(ui, fitted);
+        }
+        None => {
+            ui.painter().rect_filled(rect, radius, egui::Color32::from_white_alpha(20));
         }
     }
 }

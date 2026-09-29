@@ -97,6 +97,8 @@ pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
     };
 
     // Extract owned values before any mutable borrow of state.
+    let album_key = first.album_key.clone();
+    let art_track = first.path.clone();
     let album = first.album.clone();
     let artist = if first.album_artist.is_empty() {
         first.artist.clone()
@@ -112,12 +114,20 @@ pub fn show_album(ui: &mut egui::Ui, state: &mut AppState, _key: &str) {
     parts.push(format_album_duration(total_ms));
 
     let back = ui.button("← Albums").clicked();
+    let tex = state.art.get(&album_key, &art_track);
     ui.add_space(16.0);
-    ui.label(or_unknown(&album, "Unknown Album").size(26.0));
-    ui.add_space(4.0);
-    ui.label(or_unknown(&artist, "Unknown Artist").size(16.0));
-    ui.add_space(4.0);
-    ui.label(egui::RichText::new(parts.join(" • ")).weak());
+    ui.horizontal(|ui| {
+        crate::artwork::art_image(ui, tex.as_ref(), 160.0);
+        ui.add_space(20.0);
+        ui.vertical(|ui| {
+            ui.add_space(36.0);
+            ui.label(or_unknown(&album, "Unknown Album").size(26.0));
+            ui.add_space(4.0);
+            ui.label(or_unknown(&artist, "Unknown Artist").size(16.0));
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(parts.join(" • ")).weak());
+        });
+    });
     ui.add_space(8.0);
     crate::ui::tracks::show(ui, state, false);
     if back {

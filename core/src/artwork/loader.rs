@@ -107,8 +107,8 @@ mod tests {
         // Wait up to 5 s for both results (poll every 20 ms).
         let mut results: Vec<(String, Option<Thumb>)> = Vec::new();
         for _ in 0..250 {
-            results = loader.try_results();
-            if results.len() == 2 {
+            results.extend(loader.try_results());
+            if results.len() >= 2 {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
