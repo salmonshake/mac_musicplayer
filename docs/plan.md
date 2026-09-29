@@ -838,3 +838,17 @@
 - **10.4** `core/src/artwork/loader.rs` + `core/src/paths.rs`: `ArtworkLoader`（スレッド + mpsc、`request` / `try_results`）、`artwork_dir()` + テスト
 - **10.5** `app/src/artwork.rs` + `app/src/state.rs`: `ArtTextures`（LRU、`get` / `poll`）、AppState に保持、`poll` から呼ぶ + 退避ロジックのテスト
 - **10.6** `app/src/ui/albums.rs` + `app/src/ui/player_bar.rs`: アルバム詳細ヘッダー 160px とプレイヤーバー 56px に表示（無ければ今のプレースホルダー）
+
+## 段階11: テーマ切り替え（System / Light / Dark）
+
+設計:
+- 設定は `~/Library/Application Support/MacMusicPlay/settings.txt`（`key=value` の行。依存を増やさないため serde は使わない）。読めない・不明な値は既定値（System）。書き込みは tmp → rename
+- core は egui に依存しないので `ThemeMode { System, Light, Dark }` を core に置き、app で `egui::ThemePreference` に変換して `ctx.set_theme` する（System は OS に追従）
+- 切り替え UI: ツールバー右端のボタン（◐ System → ☀ Light → ☾ Dark → … の順に巡回、ホバーで「Theme: …」）
+- ダーク前提の色（`Color32::from_white_alpha`）をテーマ対応のヘルパーに置き換える: ダークは白の半透明、ライトは黒の半透明
+- スクショ用に `MMP_THEME=light|dark` で上書きできるようにする（保存はしない）
+
+タスク:
+- **11.1** `core/src/settings.rs` + `core/src/paths.rs`: `ThemeMode`（`next()` で巡回）、`Settings { theme }`、`parse(text)` / `to_text()` / `load(path)` / `save(path)`、`settings_path()` + テスト
+- **11.2** `app/src/style.rs` + `ui/sidebar.rs` + `ui/player_bar.rs` + `artwork.rs`: `subtle_fill(ui, alpha)` を作り、`from_white_alpha` の 5 箇所を置き換える
+- **11.3** `app/src/state.rs` + `app/src/ui/toolbar.rs` + `app/src/main.rs`: AppState に `settings` / `settings_path`、`set_theme(ctx, mode)`（適用 + 保存）、起動時に適用（`MMP_THEME` 優先）、ツールバーの切り替えボタン
