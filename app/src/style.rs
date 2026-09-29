@@ -48,6 +48,9 @@ pub fn apply(ctx: &egui::Context) {
         s.visuals.window_corner_radius = egui::CornerRadius::same(12);
         s.visuals.menu_corner_radius = egui::CornerRadius::same(10);
         s.visuals.handle_shape = egui::style::HandleShape::Circle;
+        // Labels are not selectable: clicks and drags go to the row, not text selection.
+        s.interaction.selectable_labels = false;
+        s.interaction.multi_widget_text_select = false;
     });
 }
 
