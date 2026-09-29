@@ -5,7 +5,6 @@ pub mod artwork;
 pub mod decode;
 pub mod library;
 pub mod paths;
-pub mod playback;
 pub mod player;
 pub mod playlist;
 pub mod settings;

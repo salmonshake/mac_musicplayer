@@ -1,87 +1,81 @@
+//! CLI player: plays files gaplessly through the playback engine.
+//!
+//! Usage: `play [--device <uid>] <audio file>...` or `play --list-devices`.
+
 use std::path::PathBuf;
+use std::time::Duration;
 
-fn main() {
-    let args = std::env::args().skip(1).collect::<Vec<String>>();
+use mmp_core::coreaudio::device;
+use mmp_core::player::{PlayState, Player};
 
-    if args.is_empty() {
-        eprintln!("usage: play [--device <uid>] <audio file>...");
-        eprintln!("       play --list-devices");
-        std::process::exit(2);
-    }
+fn usage() -> ! {
+    eprintln!("usage: play [--device <uid>] <audio file>...");
+    eprintln!("       play --list-devices");
+    std::process::exit(2);
+}
 
-    // --list-devices: print device list and exit.
-    if args[0] == "--list-devices" {
-        match mmp_core::coreaudio::device::output_devices() {
-            Ok(devices) => {
-                let default_id = mmp_core::coreaudio::device::default_output_device().ok();
-                for d in &devices {
-                    let prefix = if default_id == Some(d.id) { "* " } else { "  " };
-                    let bt = if d.is_bluetooth() { "  [BT]" } else { "" };
-                    println!(
-                        "{}{}  {}  {}ch  {}Hz{}",
-                        prefix,
-                        d.uid,
-                        d.name,
-                        d.output_channels,
-                        d.nominal_sample_rate as u32,
-                        bt
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("error: {e}");
-                std::process::exit(1);
-            }
-        }
-        std::process::exit(0);
-    }
-
-    // --device <uid>: parse device UID and remaining file args.
-    let (device_uid, file_args) = if args[0] == "--device" {
-        match args.get(1) {
-            Some(uid) => (Some(uid.clone()), args[2..].to_vec()),
-            None => {
-                eprintln!("usage: play [--device <uid>] <audio file>...");
-                eprintln!("       play --list-devices");
-                std::process::exit(2);
-            }
-        }
-    } else {
-        (None, args)
-    };
-
-    if file_args.is_empty() {
-        eprintln!("usage: play [--device <uid>] <audio file>...");
-        eprintln!("       play --list-devices");
-        std::process::exit(2);
-    }
-
-    let paths: Vec<PathBuf> = file_args.into_iter().map(PathBuf::from).collect();
-    let opts = match device_uid {
-        Some(uid) => mmp_core::playback::PlaybackOptions {
-            device_uid: Some(uid),
-        },
-        None => mmp_core::playback::PlaybackOptions::default(),
-    };
-
-    match mmp_core::playback::play_files_blocking(&paths, &opts) {
-        Ok(report) => {
-            for f in &report.failures {
-                eprintln!("skipped {}: {}", f.path.display(), f.error);
-            }
-            if report.device_fallback {
-                eprintln!(
-                    "warning: requested device not found or disconnected; \
-                     playing on the default output"
-                );
-            }
-            if report.failures.len() == paths.len() {
-                std::process::exit(1);
-            }
-        }
+fn list_devices() {
+    let devices = match device::output_devices() {
+        Ok(d) => d,
         Err(e) => {
             eprintln!("error: {e}");
             std::process::exit(1);
+        }
+    };
+    let default_id = device::default_output_device().ok();
+    for d in &devices {
+        let prefix = if default_id == Some(d.id) { "* " } else { "  " };
+        let bt = if d.is_bluetooth() { "  [BT]" } else { "" };
+        println!(
+            "{prefix}{}  {}  {}ch  {}Hz{bt}",
+            d.uid, d.name, d.output_channels, d.nominal_sample_rate as u32
+        );
+    }
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (device_uid, files) = match args.first().map(String::as_str) {
+        None => usage(),
+        Some("--list-devices") => {
+            list_devices();
+            return;
+        }
+        Some("--device") => match args.get(1) {
+            Some(uid) => (Some(uid.clone()), &args[2..]),
+            None => usage(),
+        },
+        Some(_) => (None, &args[..]),
+    };
+    if files.is_empty() {
+        usage();
+    }
+    let paths: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
+
+    let player = Player::new(device_uid);
+    player.play_queue(paths, 0);
+
+    // Wait for playback to start, then for the queue to finish.
+    let mut started = false;
+    let mut last_error = None;
+    loop {
+        std::thread::sleep(Duration::from_millis(100));
+        let s = player.status();
+        if s.error.is_some() && s.error != last_error {
+            if let Some(e) = &s.error {
+                eprintln!("{e}");
+            }
+            last_error = s.error.clone();
+        }
+        match s.state {
+            PlayState::Playing | PlayState::Paused => started = true,
+            PlayState::Stopped if started => break,
+            PlayState::Stopped => {
+                // Nothing could be opened at all.
+                if last_error.is_some() {
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
