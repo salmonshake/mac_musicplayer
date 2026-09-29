@@ -41,10 +41,28 @@ impl ThemeMode {
     }
 }
 
+/// Parse a boolean value from a string (on/true/1 → true, off/false/0 → false).
+fn parse_bool(v: &str) -> Option<bool> {
+    match v.trim() {
+        "on" | "true" | "1" => Some(true),
+        "off" | "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
+/// Format a bool as on/off for persisted text.
+fn on_off(b: bool) -> &'static str {
+    if b { "on" } else { "off" }
+}
+
 /// All persisted settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Settings {
     pub theme: ThemeMode,
+    /// Bit-perfect output (device rate follows the track, software volume off).
+    pub bit_perfect: bool,
+    /// Exclusive (hog mode) access while in bit-perfect mode.
+    pub hog_mode: bool,
 }
 
 impl Settings {
@@ -53,17 +71,18 @@ impl Settings {
         let mut s = Settings::default();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
-            if k.trim() == "theme"
-                && let Some(t) = ThemeMode::from_str_opt(v)
-            {
-                s.theme = t;
+            match k.trim() {
+                "theme" => { if let Some(t) = ThemeMode::from_str_opt(v) { s.theme = t; } }
+                "bit_perfect" => { if let Some(b) = parse_bool(v) { s.bit_perfect = b; } }
+                "hog_mode" => { if let Some(b) = parse_bool(v) { s.hog_mode = b; } }
+                _ => {}
             }
         }
         s
     }
 
     pub fn to_text(&self) -> String {
-        format!("theme={}\n", self.theme.as_str())
+        format!("theme={}\nbit_perfect={}\nhog_mode={}\n", self.theme.as_str(), on_off(self.bit_perfect), on_off(self.hog_mode))
     }
 
     /// Loads settings; a missing or unreadable file gives the defaults.
@@ -95,7 +114,7 @@ mod tests {
         assert_eq!(Settings::parse("theme=dark\n").theme, ThemeMode::Dark);
         assert_eq!(Settings::parse("# c\nfoo=1\ntheme = light \n").theme, ThemeMode::Light);
         assert_eq!(Settings::parse("theme=purple").theme, ThemeMode::System);
-        let s = Settings { theme: ThemeMode::Light };
+        let s = Settings { theme: ThemeMode::Light, ..Default::default() };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
 
@@ -104,8 +123,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("settings.txt");
         assert_eq!(Settings::load(&p), Settings::default());
-        let s = Settings { theme: ThemeMode::Dark };
+        let s = Settings { theme: ThemeMode::Dark, ..Default::default() };
         s.save(&p).unwrap();
         assert_eq!(Settings::load(&p), s);
+    }
+
+    #[test]
+    fn parse_output_mode() {
+        let s = Settings::parse("bit_perfect=on\nhog_mode=off\n");
+        assert!(s.bit_perfect);
+        assert!(!s.hog_mode);
+        assert_eq!(s.theme, ThemeMode::System);
+
+        assert!(!Settings::parse("bit_perfect=maybe").bit_perfect);
+
+        let s = Settings { theme: ThemeMode::Dark, bit_perfect: true, hog_mode: true };
+        assert_eq!(Settings::parse(&s.to_text()), s);
     }
 }
