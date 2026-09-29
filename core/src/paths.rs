@@ -64,6 +64,20 @@ pub fn artwork_dir() -> std::io::Result<std::path::PathBuf> {
     Ok(dir)
 }
 
+/// Build the settings file path inside the data directory under `home`.
+#[cfg(test)]
+fn settings_path_in(home: &std::path::Path) -> std::path::PathBuf {
+    data_dir_in(home).join("settings.txt")
+}
+
+/// Return the path to the settings file, creating the data directory if necessary.
+///
+/// Fails with `ErrorKind::NotFound` when the `HOME` environment variable
+/// is not set.
+pub fn settings_path() -> std::io::Result<std::path::PathBuf> {
+    Ok(data_dir()?.join("settings.txt"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +119,14 @@ mod tests {
             .join("Application Support")
             .join(APP_NAME)
             .join("artwork");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn settings_path_in_correct() {
+        let tmp = std::env::temp_dir();
+        let result = settings_path_in(&tmp);
+        let expected = tmp.join("Library").join("Application Support").join(APP_NAME).join("settings.txt");
         assert_eq!(result, expected);
     }
 }

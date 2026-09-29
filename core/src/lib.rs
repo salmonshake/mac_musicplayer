@@ -8,3 +8,4 @@ pub mod paths;
 pub mod playback;
 pub mod player;
 pub mod playlist;
+pub mod settings;
