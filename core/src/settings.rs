@@ -56,13 +56,15 @@ fn on_off(b: bool) -> &'static str {
 }
 
 /// All persisted settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Settings {
     pub theme: ThemeMode,
     /// Bit-perfect output (device rate follows the track, software volume off).
     pub bit_perfect: bool,
     /// Exclusive (hog mode) access while in bit-perfect mode.
     pub hog_mode: bool,
+    /// Output device UID; None follows the system default output.
+    pub output_device: Option<String>,
 }
 
 impl Settings {
@@ -75,6 +77,10 @@ impl Settings {
                 "theme" => { if let Some(t) = ThemeMode::from_str_opt(v) { s.theme = t; } }
                 "bit_perfect" => { if let Some(b) = parse_bool(v) { s.bit_perfect = b; } }
                 "hog_mode" => { if let Some(b) = parse_bool(v) { s.hog_mode = b; } }
+                "output_device" => {
+                    let v = v.trim();
+                    s.output_device = if v.is_empty() { None } else { Some(v.to_string()) };
+                }
                 _ => {}
             }
         }
@@ -82,7 +88,7 @@ impl Settings {
     }
 
     pub fn to_text(&self) -> String {
-        format!("theme={}\nbit_perfect={}\nhog_mode={}\n", self.theme.as_str(), on_off(self.bit_perfect), on_off(self.hog_mode))
+        format!("theme={}\nbit_perfect={}\nhog_mode={}\noutput_device={}\n", self.theme.as_str(), on_off(self.bit_perfect), on_off(self.hog_mode), self.output_device.as_deref().unwrap_or(""))
     }
 
     /// Loads settings; a missing or unreadable file gives the defaults.
@@ -137,7 +143,18 @@ mod tests {
 
         assert!(!Settings::parse("bit_perfect=maybe").bit_perfect);
 
-        let s = Settings { theme: ThemeMode::Dark, bit_perfect: true, hog_mode: true };
+        let s = Settings { theme: ThemeMode::Dark, bit_perfect: true, hog_mode: true, ..Default::default() };
+        assert_eq!(Settings::parse(&s.to_text()), s);
+    }
+
+    #[test]
+    fn parse_output_device() {
+        let s = Settings::parse("output_device=AppleUSBAudioEngine:XYZ\n");
+        assert_eq!(s.output_device, Some("AppleUSBAudioEngine:XYZ".to_string()));
+
+        assert_eq!(Settings::parse("output_device=\n").output_device, None);
+
+        let s = Settings { output_device: Some("BuiltInSpeakerDevice".into()), ..Default::default() };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
 }

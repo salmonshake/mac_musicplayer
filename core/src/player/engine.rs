@@ -681,36 +681,38 @@ impl Engine {
     }
 
     fn set_device(&mut self, uid: Option<String>) {
+        let mut err = None;
         let new = match &uid {
             Some(u) => match find_output_device_by_uid(u) {
                 Ok(Some(d)) => Some(d.id),
                 Ok(None) => {
-                    let msg = format!("output device {u} not found; using the default");
-                    self.set_status(|s| s.error = Some(msg));
+                    err = Some(format!("output device {u} not found; using the default"));
                     None
                 }
                 Err(e) => {
-                    let msg = e.to_string();
-                    self.set_status(|s| s.error = Some(msg));
+                    err = Some(e.to_string());
                     None
                 }
             },
             None => None,
         };
-        if new == self.device {
-            return;
+        if new != self.device {
+            let resume = self.state != PlayState::Stopped && self.out.is_some();
+            let frames = self.position_frames();
+            // Stop the unit, then undo what we did to the old device.
+            self.out = None;
+            self.release_hog();
+            self.restore_original_rate();
+            self.device = new;
+            if resume {
+                self.restart_current(frames);
+            }
+            self.publish_output_mode();
         }
-        let resume = self.state != PlayState::Stopped && self.out.is_some();
-        let frames = self.position_frames();
-        // Stop the unit, then undo what we did to the old device.
-        self.out = None;
-        self.release_hog();
-        self.restore_original_rate();
-        self.device = new;
-        if resume {
-            self.restart_current(frames);
+        // After restart_current, which rewrites status.error.
+        if let Some(msg) = err {
+            self.set_status(|s| s.error = Some(msg));
         }
-        self.publish_output_mode();
     }
 
     /// Match the target device to `rate` (and take hog mode if asked) before
