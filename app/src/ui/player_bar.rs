@@ -177,8 +177,9 @@ fn seek_bar(ui: &mut egui::Ui, state: &mut AppState, width: f32) {
 
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 14.0), egui::Sense::click_and_drag());
             let bar = egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 4.0));
+            let track_bg = crate::style::subtle_fill(ui, 40);
             let p = ui.painter();
-            p.rect_filled(bar, 2.0, egui::Color32::from_white_alpha(40));
+            p.rect_filled(bar, 2.0, track_bg);
 
             let frac = if duration > 0 { shown as f32 / duration as f32 } else { 0.0 };
             let mut filled = bar;

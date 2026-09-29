@@ -3,6 +3,7 @@
 use eframe::egui;
 use mmp_core::artwork::cache::ArtworkCache;
 use mmp_core::artwork::loader::ArtworkLoader;
+use crate::style::subtle_fill;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -101,7 +102,7 @@ pub fn art_image(ui: &mut egui::Ui, tex: Option<&egui::TextureHandle>, size: f32
             egui::Image::new(t).corner_radius(radius).paint_at(ui, fitted);
         }
         None => {
-            ui.painter().rect_filled(rect, radius, egui::Color32::from_white_alpha(20));
+            ui.painter().rect_filled(rect, radius, subtle_fill(ui, 20));
         }
     }
 }

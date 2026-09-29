@@ -40,3 +40,12 @@ pub fn apply(ctx: &egui::Context) {
         s.spacing.interact_size.y = 26.0;
     });
 }
+
+/// Translucent fill that works on both themes: white on dark, black on light.
+pub fn subtle_fill(ui: &egui::Ui, alpha: u8) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::from_white_alpha(alpha)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(0, 0, 0, alpha)
+    }
+}
