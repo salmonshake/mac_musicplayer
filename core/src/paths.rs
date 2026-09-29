@@ -46,6 +46,24 @@ pub fn playlists_dir() -> std::io::Result<std::path::PathBuf> {
     Ok(dir)
 }
 
+/// Build the artwork directory path inside the data directory under `home`.
+fn artwork_dir_in(home: &std::path::Path) -> std::path::PathBuf {
+    data_dir_in(home).join("artwork")
+}
+
+/// Return the artwork directory, creating it if necessary.
+///
+/// Fails with `ErrorKind::NotFound` when the `HOME` environment variable
+/// is not set.
+pub fn artwork_dir() -> std::io::Result<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set")
+    })?;
+    let dir = artwork_dir_in(std::path::Path::new(&home));
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,6 +93,18 @@ mod tests {
             .join("Application Support")
             .join(APP_NAME)
             .join("playlists");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn artwork_dir_in_correct() {
+        let tmp = std::env::temp_dir();
+        let result = artwork_dir_in(&tmp);
+        let expected = tmp
+            .join("Library")
+            .join("Application Support")
+            .join(APP_NAME)
+            .join("artwork");
         assert_eq!(result, expected);
     }
 }
