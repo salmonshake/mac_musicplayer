@@ -61,12 +61,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                     ui.vertical(|ui| {
                         ui.add_space(6.0);
                         if let Some(ref label) = bp_label {
-                            ui.label(egui::RichText::new(label).small().color(ui.visuals().selection.bg_fill));
+                            ui.label(egui::RichText::new(label).small().color(crate::style::accent_text(ui)));
                         }
                         match state.now_track() {
                             Some(t) => {
-                                ui.label(egui::RichText::new(&t.title).strong().size(15.0));
-                                ui.label(egui::RichText::new(&t.artist).weak());
+                                    ui.add(egui::Label::new(egui::RichText::new(&t.title).strong().size(15.0)).truncate())
+                                    .on_hover_text(&t.title);
+                                ui.add(egui::Label::new(egui::RichText::new(&t.artist).weak()).truncate());
                             }
                             None => {
                                 ui.label(egui::RichText::new("Not playing").weak());

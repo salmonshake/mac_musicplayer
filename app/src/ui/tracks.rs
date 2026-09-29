@@ -48,7 +48,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
     let accent_text = crate::style::accent_text(ui);
     let play_fill = crate::style::playing_fill(ui, false);
     let play_sel_fill = crate::style::playing_fill(ui, true);
-    let sel_fill = crate::style::subtle_fill(ui, 36);
+    let sel_fill = crate::style::subtle_fill(ui, 24);
     let stripe_fill = crate::style::subtle_fill(ui, 8);
     let hover_fill = crate::style::subtle_fill(ui, 18);
     let row_x = ui.max_rect().x_range();
@@ -119,14 +119,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     }
                 });
             });
-            // Title column: center.
+            // Title column: vertically centred like the other columns.
             row.col(|ui| {
-                let title = if is_playing {
-                    egui::RichText::new(&t.title).strong()
-                } else {
-                    egui::RichText::new(&t.title)
-                };
-                ui.label(title);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let title = if is_playing {
+                        egui::RichText::new(&t.title).strong()
+                    } else {
+                        egui::RichText::new(&t.title)
+                    };
+                    ui.add(egui::Label::new(title).truncate());
+                });
             });
             // Length column: right-aligned
             row.col(|ui| {
