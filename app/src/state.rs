@@ -184,6 +184,9 @@ impl AppState {
         }
         let theme = std::env::var("MMP_THEME").ok().and_then(|v| ThemeMode::from_str_opt(&v)).unwrap_or(s.settings.theme);
         ctx.set_theme(theme_pref(theme));
+        if s.settings.output_device.is_some() {
+            s.player.set_device(s.settings.output_device.clone());
+        }
         s.player.set_output_mode(s.settings.bit_perfect, s.settings.hog_mode);
         Ok(s)
     }
@@ -667,6 +670,13 @@ impl AppState {
     pub fn set_hog_mode(&mut self, on: bool) {
         self.settings.hog_mode = on;
         self.player.set_output_mode(self.settings.bit_perfect, on);
+        self.save_settings();
+    }
+
+    /// Switches the output device (None = system default) and saves the choice.
+    pub fn set_output_device(&mut self, uid: Option<String>) {
+        self.settings.output_device = uid.clone();
+        self.player.set_device(uid);
         self.save_settings();
     }
 

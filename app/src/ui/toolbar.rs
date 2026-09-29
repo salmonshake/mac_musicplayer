@@ -80,6 +80,25 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                             if r.changed() {
                                 state.set_hog_mode(hog);
                             }
+                            ui.separator();
+                            ui.label(egui::RichText::new("Output").small().strong().weak());
+                            // Only queried while the menu is open.
+                            let devices = mmp_core::coreaudio::device::output_devices().unwrap_or_default();
+                            let current = state.settings.output_device.clone();
+                            if ui.radio(current.is_none(), "System default").clicked() && current.is_some() {
+                                state.set_output_device(None);
+                            }
+                            for d in &devices {
+                                let selected = current.as_deref() == Some(d.uid.as_str());
+                                let label = if d.is_bit_perfect_capable() {
+                                    d.name.clone()
+                                } else {
+                                    format!("{} (wireless)", d.name)
+                                };
+                                if ui.radio(selected, label).clicked() && !selected {
+                                    state.set_output_device(Some(d.uid.clone()));
+                                }
+                            }
                         });
                     ui.add_space(12.0);
                     ui.label(status_text(state));
