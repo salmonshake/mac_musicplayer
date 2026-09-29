@@ -26,7 +26,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                         .left_text(&label)
                         .right_text(format_duration(track.duration_ms))
                         .frame_when_inactive(true)
-                        .corner_radius(6.0)
                         .min_size(egui::vec2(ui.available_width(), 30.0));
                     if ui.add(b).clicked() {
                         state.player.jump_to_item(idx);
