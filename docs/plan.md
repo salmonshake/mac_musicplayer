@@ -883,3 +883,14 @@
 - **D.1**（指揮役）`core/src/player/engine.rs`: `set_device` + テスト
 - **D.2** `core/src/settings.rs`: `output_device: Option<String>`（Copy をやめる）+ テスト
 - **D.3** `app/src/state.rs` + `app/src/ui/toolbar.rs`: `set_output_device`、起動時に適用、⚙ メニューに一覧
+
+## 追加: UI の角丸化と選択/再生中の区別（ユーザー依頼 2026-09-29）
+
+- 全体を丸く: ウィジェット・ウィンドウ・メニューの角丸、スライダーのつまみを円に
+- 曲一覧: egui_extras は行背景（縞・選択・ホバー）を角丸 0 でセルごとに塗るため使わず、各行の最初のセルで `Shape::Noop` を置いて場所を確保し、行の response の矩形が分かってから角丸の背景に差し替える（文字の下に描かれる）。選択 = 薄いグレー、再生中 = アクセント色を薄く、両方 = 少し濃く。再生中は曲名もアクセント色
+- 再生ボタン類: フォントの ⏮▶⏸⏭ は角が尖るので、角を丸めた多角形（角を二次ベジェで丸める）を自前で描く
+
+タスク:
+- **U.1** `app/src/style.rs`: 角丸 8（ウィンドウ 12・メニュー 10）、`handle_shape = Circle`
+- **U.2** `app/src/ui/tracks.rs`: 角丸の行背景、選択/再生中の色分け
+- **U.3** `app/src/ui/icons.rs`（新規）+ `app/src/ui/player_bar.rs`: 角丸の再生・一時停止・前後アイコン + テスト
