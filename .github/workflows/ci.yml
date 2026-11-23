@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Apple Silicon runner; the app only targets macOS on arm64.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Tests that need audio files or an output device skip themselves
+      # when `testdata/` or a device is missing (as on CI).
+      - name: Test
+        run: cargo test --workspace
+      - name: Release build
+        run: cargo build --release -p maplay-app
