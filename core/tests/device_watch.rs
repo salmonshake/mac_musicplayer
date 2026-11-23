@@ -1,4 +1,4 @@
-use mmp_core::coreaudio::device_watch::DeviceWatcher;
+use maplay_core::coreaudio::device_watch::DeviceWatcher;
 
 #[test]
 fn watcher_create_and_drop() {

@@ -11,13 +11,13 @@ use eframe::egui;
 use media::MediaAction;
 use state::{AppState, Nav};
 
-struct MmpApp {
+struct MaplayApp {
     state: Result<AppState, String>,
     media: Option<media::MediaKeys>,
     dev: Option<screenshot::DevHooks>,
 }
 
-impl eframe::App for MmpApp {
+impl eframe::App for MaplayApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let Ok(s) = &mut self.state else {
             return;
@@ -111,7 +111,7 @@ fn main() -> eframe::Result {
             if let (Some(dev), Ok(s)) = (&dev, &mut state) {
                 dev.apply_startup(&cc.egui_ctx, s);
             }
-            Ok(Box::new(MmpApp {
+            Ok(Box::new(MaplayApp {
                 state,
                 media: media::MediaKeys::new(cc.egui_ctx.clone()),
                 dev,

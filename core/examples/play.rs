@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use mmp_core::coreaudio::device;
-use mmp_core::player::{PlayState, Player};
+use maplay_core::coreaudio::device;
+use maplay_core::player::{PlayState, Player};
 
 fn usage() -> ! {
     eprintln!("usage: play [--device <uid>] <audio file>...");

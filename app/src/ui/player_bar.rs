@@ -1,7 +1,7 @@
 //! Bottom player bar: track info, transport buttons, seek bar, volume.
 
 use eframe::egui;
-use mmp_core::player::{PlayState, RepeatMode};
+use maplay_core::player::{PlayState, RepeatMode};
 
 use crate::state::AppState;
 use crate::ui::icons;

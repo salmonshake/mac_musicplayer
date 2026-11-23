@@ -1,8 +1,8 @@
 //! OS media keys / Now Playing bridge (souvlaki).
 
 use eframe::egui;
-use mmp_core::library::TrackRow;
-use mmp_core::player::{PlayState, PlayerStatus};
+use maplay_core::library::TrackRow;
+use maplay_core::player::{PlayState, PlayerStatus};
 use souvlaki::{
     MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
     SeekDirection,

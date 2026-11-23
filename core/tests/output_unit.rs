@@ -1,5 +1,5 @@
-use mmp_core::coreaudio::ext_audio_file::StreamInfo;
-use mmp_core::coreaudio::output::{OutputUnit, RenderShared, render_into};
+use maplay_core::coreaudio::ext_audio_file::StreamInfo;
+use maplay_core::coreaudio::output::{OutputUnit, RenderShared, render_into};
 use rtrb::RingBuffer;
 use std::thread;
 use std::time::Duration;
@@ -29,7 +29,7 @@ fn test_output_unit_lifecycle() {
 
 #[test]
 fn test_output_unit_explicit_device() {
-    let id = match mmp_core::coreaudio::device::default_output_device() {
+    let id = match maplay_core::coreaudio::device::default_output_device() {
         Ok(id) => id,
         Err(e) => {
             eprintln!("skipping: {e}");

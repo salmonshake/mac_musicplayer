@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use mmp_core::decode::open;
+use maplay_core::decode::open;
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

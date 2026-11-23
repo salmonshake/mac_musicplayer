@@ -2,8 +2,8 @@
 
 use crate::style::subtle_fill;
 use eframe::egui;
-use mmp_core::artwork::cache::ArtworkCache;
-use mmp_core::artwork::loader::ArtworkLoader;
+use maplay_core::artwork::cache::ArtworkCache;
+use maplay_core::artwork::loader::ArtworkLoader;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -26,7 +26,7 @@ pub struct ArtTextures {
 
 impl ArtTextures {
     pub fn new(ctx: &egui::Context) -> Self {
-        let loader = mmp_core::paths::artwork_dir()
+        let loader = maplay_core::paths::artwork_dir()
             .ok()
             .and_then(|d| ArtworkCache::new(d).ok())
             .map(|cache| {

@@ -1,15 +1,15 @@
-use mmp_core::coreaudio::ext_audio_file::ExtAudioFile;
+use maplay_core::coreaudio::ext_audio_file::ExtAudioFile;
 
 #[test]
 fn test_open_nonexistent_path() {
-    let path = std::path::Path::new("/tmp/nonexistent_file_for_mmp_core_test_12345");
+    let path = std::path::Path::new("/tmp/nonexistent_file_for_maplay_core_test_12345");
     let result = ExtAudioFile::open(path);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_open_empty_file() {
-    let p = std::env::temp_dir().join("mmp_core_empty_test.flac");
+    let p = std::env::temp_dir().join("maplay_core_empty_test.flac");
     std::fs::write(&p, b"").unwrap();
     let result = ExtAudioFile::open(&p);
     std::fs::remove_file(&p).ok();

@@ -1,14 +1,14 @@
-//! Development screenshot capture: environment variable `MMP_SCREENSHOT` triggers
+//! Development screenshot capture: environment variable `MAPLAY_SCREENSHOT` triggers
 //! a single PNG output, then the app closes itself.
 //!
-//! With `MMP_SCREENSHOT` set, these also shape what is captured:
-//! - `MMP_THEME=light|dark` — theme (not saved)
-//! - `MMP_NAV=albums|artists|genres|album` — view (`album` = the first album)
-//! - `MMP_PLAY=<row>` — play that row of the view, muted
-//! - `MMP_SELECT=<row>` — select that row
+//! With `MAPLAY_SCREENSHOT` set, these also shape what is captured:
+//! - `MAPLAY_THEME=light|dark` — theme (not saved)
+//! - `MAPLAY_NAV=albums|artists|genres|album` — view (`album` = the first album)
+//! - `MAPLAY_PLAY=<row>` — play that row of the view, muted
+//! - `MAPLAY_SELECT=<row>` — select that row
 
 use eframe::egui;
-use mmp_core::settings::ThemeMode;
+use maplay_core::settings::ThemeMode;
 use std::path::PathBuf;
 
 use crate::state::{self, AppState, Nav};
@@ -22,27 +22,27 @@ pub struct DevHooks {
 }
 
 impl DevHooks {
-    /// Returns `Some` only when `MMP_SCREENSHOT` is set.
+    /// Returns `Some` only when `MAPLAY_SCREENSHOT` is set.
     pub fn from_env() -> Option<Self> {
         let shot = Screenshotter::from_env()?;
         let index = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok());
         Some(Self {
             shot,
-            open_album: std::env::var("MMP_NAV").is_ok_and(|v| v == "album"),
-            play: index("MMP_PLAY"),
-            select: index("MMP_SELECT"),
+            open_album: std::env::var("MAPLAY_NAV").is_ok_and(|v| v == "album"),
+            play: index("MAPLAY_PLAY"),
+            select: index("MAPLAY_SELECT"),
         })
     }
 
     /// Theme and list views, applied once at startup.
     pub fn apply_startup(&self, ctx: &egui::Context, s: &mut AppState) {
-        if let Some(t) = std::env::var("MMP_THEME")
+        if let Some(t) = std::env::var("MAPLAY_THEME")
             .ok()
             .and_then(|v| ThemeMode::from_str_opt(&v))
         {
             ctx.set_theme(state::theme_pref(t));
         }
-        match std::env::var("MMP_NAV").as_deref() {
+        match std::env::var("MAPLAY_NAV").as_deref() {
             Ok("albums") => s.set_nav(Nav::Albums),
             Ok("artists") => s.set_nav(Nav::Artists),
             Ok("genres") => s.set_nav(Nav::Genres),
@@ -72,7 +72,7 @@ impl DevHooks {
     }
 }
 
-/// Captures one screenshot when the `MMP_SCREENSHOT` environment variable is set.
+/// Captures one screenshot when the `MAPLAY_SCREENSHOT` environment variable is set.
 pub struct Screenshotter {
     png: PathBuf,
     frames: u32,
@@ -81,9 +81,9 @@ pub struct Screenshotter {
 }
 
 impl Screenshotter {
-    /// Returns `Some` when `MMP_SCREENSHOT` is set, otherwise `None`.
+    /// Returns `Some` when `MAPLAY_SCREENSHOT` is set, otherwise `None`.
     pub fn from_env() -> Option<Self> {
-        let png = std::env::var_os("MMP_SCREENSHOT")?;
+        let png = std::env::var_os("MAPLAY_SCREENSHOT")?;
         Some(Self {
             png: PathBuf::from(png),
             frames: 0,

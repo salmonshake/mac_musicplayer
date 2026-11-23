@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use mmp_core::library::{ScanEvent, ScanStats, scan_all_in_background};
+use maplay_core::library::{ScanEvent, ScanStats, scan_all_in_background};
 
 /// Copies *src* directory recursively into *dst*.
 fn copy_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -53,7 +53,7 @@ fn background_scan_completes() {
     // Open the DB, add the root folder, then drop it so the scanner can open
     // a fresh connection.
     {
-        let lib = mmp_core::library::Library::open(&db_path).expect("open library");
+        let lib = maplay_core::library::Library::open(&db_path).expect("open library");
         lib.add_folder(&root).expect("add folder");
         // lib dropped here — DB file persists on disk.
     }
@@ -95,7 +95,7 @@ fn background_scan_completes() {
     handle.wait();
 
     // Re-open the database and verify track count.
-    let lib = mmp_core::library::Library::open(&db_path).expect("reopen library");
+    let lib = maplay_core::library::Library::open(&db_path).expect("reopen library");
     assert_eq!(lib.track_count().expect("count"), 4, "four tracks in DB");
 
     // Drop db_dir so the DB file is cleaned up.

@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use mmp_core::library::{Library, is_audio_path, scan_folder};
+use maplay_core::library::{Library, is_audio_path, scan_folder};
 
 /// Copies *src* directory recursively into *dst*.
 fn copy_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {

@@ -126,7 +126,7 @@ impl Player {
         let status = Arc::new(Mutex::new(PlayerStatus::default()));
         let st = Arc::clone(&status);
         let join = std::thread::Builder::new()
-            .name("mmp-player".into())
+            .name("maplay-player".into())
             .spawn(move || engine_main(rx, st, device_uid))
             .ok();
         Self { tx, status, join }

@@ -1,4 +1,4 @@
-use mmp_core::decode;
+use maplay_core::decode;
 use std::path::PathBuf;
 
 fn testdata(name: &str) -> PathBuf {

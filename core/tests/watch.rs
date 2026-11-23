@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use mmp_core::library::LibraryWatcher;
+use maplay_core::library::LibraryWatcher;
 
 /// Copies *src* directory recursively into *dst*.
 fn copy_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -54,16 +54,16 @@ fn watcher_detects_new_file() {
 
     // Register the root folder and do an initial scan.
     {
-        let mut lib = mmp_core::library::Library::open(&db_path).expect("open library");
+        let mut lib = maplay_core::library::Library::open(&db_path).expect("open library");
         lib.add_folder(&root).expect("add folder");
-        let _ = mmp_core::library::scan_folder(&mut lib, &root);
+        let _ = maplay_core::library::scan_folder(&mut lib, &root);
     }
     // lib dropped here — DB file persists on disk.
 
     // Re-open the library to force a WAL checkpoint so the initial 5 tracks
     // become visible to the watcher's connection (SQLite WAL mode issue).
     {
-        let _lib = mmp_core::library::Library::open(&db_path).expect("reopen library");
+        let _lib = maplay_core::library::Library::open(&db_path).expect("reopen library");
         assert_eq!(
             _lib.track_count().expect("count"),
             4,
@@ -89,12 +89,12 @@ fn watcher_detects_new_file() {
             Err(_) => panic!("watcher timed out before Finished event"),
         };
         match event {
-            mmp_core::library::ScanEvent::Finished { stats, .. } => break stats,
-            mmp_core::library::ScanEvent::Failed { error, .. } => {
+            maplay_core::library::ScanEvent::Finished { stats, .. } => break stats,
+            maplay_core::library::ScanEvent::Failed { error, .. } => {
                 panic!("watcher reported a Failed event: {error}");
             }
-            mmp_core::library::ScanEvent::Started { .. }
-            | mmp_core::library::ScanEvent::AllDone => {}
+            maplay_core::library::ScanEvent::Started { .. }
+            | maplay_core::library::ScanEvent::AllDone => {}
         }
     };
     assert_eq!(stats.added, 1, "one track should be added");
@@ -103,7 +103,7 @@ fn watcher_detects_new_file() {
     drop(watcher);
 
     // Re-open the database and verify the track count is now 5.
-    let lib = mmp_core::library::Library::open(&db_path).expect("reopen library");
+    let lib = maplay_core::library::Library::open(&db_path).expect("reopen library");
     assert_eq!(
         lib.track_count().expect("count"),
         5,

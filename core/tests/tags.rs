@@ -1,6 +1,6 @@
 //! Tests for tag reading (Task 5.2).
 
-use mmp_core::library::{LibraryError, read_meta};
+use maplay_core::library::{LibraryError, read_meta};
 use std::path::PathBuf;
 
 fn lib_path() -> PathBuf {

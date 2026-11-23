@@ -2,14 +2,14 @@
 
 use crate::media::MediaAction;
 use eframe::egui;
-use mmp_core::library::{
+use maplay_core::library::{
     AlbumRow, Library, LibraryWatcher, ScanEvent, ScanHandle, TrackFilter, TrackRow,
     scan_all_in_background,
 };
-use mmp_core::paths;
-use mmp_core::player::{PlayState, Player, PlayerStatus};
-use mmp_core::playlist::{PlaylistError, PlaylistStore};
-use mmp_core::settings::{Settings, ThemeMode};
+use maplay_core::paths;
+use maplay_core::player::{PlayState, Player, PlayerStatus};
+use maplay_core::playlist::{PlaylistError, PlaylistStore};
+use maplay_core::settings::{Settings, ThemeMode};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -593,7 +593,7 @@ impl AppState {
 mod tests {
     use super::{playlist_move_target, theme_pref, unique_playlist_name};
     use eframe::egui;
-    use mmp_core::settings::ThemeMode;
+    use maplay_core::settings::ThemeMode;
 
     #[test]
     fn test_unique_playlist_name_empty() {

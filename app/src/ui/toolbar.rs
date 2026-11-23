@@ -1,8 +1,8 @@
 //! Top toolbar: search box, status text, settings menu and theme toggle.
 
 use eframe::egui;
-use mmp_core::coreaudio::device;
-use mmp_core::settings::ThemeMode;
+use maplay_core::coreaudio::device;
+use maplay_core::settings::ThemeMode;
 
 use crate::state::{AppState, Nav};
 use crate::ui::tracks::count;

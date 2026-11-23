@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use mmp_core::coreaudio::device;
-use mmp_core::player::{PlayState, Player, PlayerStatus};
+use maplay_core::coreaudio::device;
+use maplay_core::player::{PlayState, Player, PlayerStatus};
 
 /// Writes `secs` seconds of 16-bit stereo silence at `rate` Hz.
 fn write_silent_wav(path: &Path, rate: u32, secs: u32) {

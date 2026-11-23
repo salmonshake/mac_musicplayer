@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -n 1)
 APP=dist/Maplay.app
 
-cargo build --release -p mmp-app
+cargo build --release -p maplay-app
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

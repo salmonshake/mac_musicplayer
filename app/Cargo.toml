@@ -1,5 +1,5 @@
 [package]
-name = "mmp-app"
+name = "maplay-app"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ name = "maplay"
 path = "src/main.rs"
 
 [dependencies]
-mmp-core = { path = "../core" }
+maplay-core = { path = "../core" }
 eframe = "0.36.2"
 egui_extras = "0.36.2"
 rfd = "0.17.2"

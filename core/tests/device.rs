@@ -1,4 +1,4 @@
-use mmp_core::coreaudio::device;
+use maplay_core::coreaudio::device;
 
 #[test]
 fn test_output_devices() {

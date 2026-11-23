@@ -15,21 +15,21 @@ const CANDIDATES: &[&str] = &[
 /// vertical misalignment between CJK and Latin text.
 ///
 /// Environment variables (development only):
-/// - `MMP_CJK_Y`: y_offset_factor override (default 0.20)
-/// - `MMP_CJK_SCALE`: scale override (default 1.0)
-/// - `MMP_CJK_PRIORITY`: "lowest" only overrides; default is "highest"
+/// - `MAPLAY_CJK_Y`: y_offset_factor override (default 0.20)
+/// - `MAPLAY_CJK_SCALE`: scale override (default 1.0)
+/// - `MAPLAY_CJK_PRIORITY`: "lowest" only overrides; default is "highest"
 pub fn install_cjk_fonts(ctx: &egui::Context) -> Option<PathBuf> {
     for p in CANDIDATES {
         if let Ok(bytes) = std::fs::read(p) {
-            let y = std::env::var("MMP_CJK_Y")
+            let y = std::env::var("MAPLAY_CJK_Y")
                 .ok()
                 .and_then(|s| s.parse::<f32>().ok())
                 .unwrap_or(0.20);
-            let scale = std::env::var("MMP_CJK_SCALE")
+            let scale = std::env::var("MAPLAY_CJK_SCALE")
                 .ok()
                 .and_then(|s| s.parse::<f32>().ok())
                 .unwrap_or(1.0);
-            let lowest = std::env::var("MMP_CJK_PRIORITY")
+            let lowest = std::env::var("MAPLAY_CJK_PRIORITY")
                 .map(|v| v == "lowest")
                 .unwrap_or(false);
             let priority = if lowest {

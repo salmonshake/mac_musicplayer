@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use mmp_core::library::{Library, LibraryWatcher, ScanEvent};
+use maplay_core::library::{Library, LibraryWatcher, ScanEvent};
 
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<String>>();
@@ -65,7 +65,7 @@ fn cmd_add(db_path: &Path, args: &[String]) {
 
 /// `lib <db> scan`
 fn cmd_scan(db_path: &Path) {
-    let handle = mmp_core::library::scan_all_in_background(db_path.to_path_buf());
+    let handle = maplay_core::library::scan_all_in_background(db_path.to_path_buf());
 
     while let Ok(event) = handle.events.recv() {
         match event {
