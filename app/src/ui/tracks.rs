@@ -61,7 +61,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
         builder
     };
     let header_labels: &[&str] = if show_album_column {
-        &["#", "Title", "Length", "Artist", "Album", "Genres", "Bitrate/Format"]
+        &[
+            "#",
+            "Title",
+            "Length",
+            "Artist",
+            "Album",
+            "Genres",
+            "Bitrate/Format",
+        ]
     } else {
         &["#", "Title", "Length", "Artist", "Genres", "Bitrate/Format"]
     };
@@ -82,12 +90,15 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     bg = Some(RowBackground::reserve(ui, row_x));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if is_playing {
-                            let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                            let (r, _) = ui
+                                .allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                             icons::play(ui.painter(), r, accent_text);
                         } else {
                             ui.label(
-                                egui::RichText::new(t.track_no.map(|n| n.to_string()).unwrap_or_default())
-                                    .monospace(),
+                                egui::RichText::new(
+                                    t.track_no.map(|n| n.to_string()).unwrap_or_default(),
+                                )
+                                .monospace(),
                             );
                         }
                     });
@@ -109,7 +120,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
                     let w = (ui.available_width() - reserve).max(24.0);
                     ui.scope(|ui| {
                         ui.set_max_width(w);
-                        ui.add(egui::Label::new(or_unknown(&t.artist, "Unknown Artist")).truncate());
+                        ui.add(
+                            egui::Label::new(or_unknown(&t.artist, "Unknown Artist")).truncate(),
+                        );
                     });
                     if is_playing {
                         crate::style::badge(ui, "PLAYING");
@@ -129,7 +142,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
 
                 let resp = row.response();
                 if let Some(bg) = bg {
-                    bg.paint(&resp, colors.fill(i, resp.hovered(), selected == Some(i), is_playing));
+                    bg.paint(
+                        &resp,
+                        colors.fill(i, resp.hovered(), selected == Some(i), is_playing),
+                    );
                 }
                 if resp.clicked() {
                     clicked = Some(i);
@@ -168,7 +184,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, show_album_column: bool) {
 
 /// Right-click menu for row `i`: Add to Playlist ▸, and in a playlist
 /// Remove / Move Up / Move Down.
-fn row_menu(ui: &mut egui::Ui, i: usize, playlists: &[String], in_playlist: bool) -> Option<RowAction> {
+fn row_menu(
+    ui: &mut egui::Ui,
+    i: usize,
+    playlists: &[String],
+    in_playlist: bool,
+) -> Option<RowAction> {
     let mut action = None;
     let mut pick = |ui: &mut egui::Ui, label: &str, a: RowAction| {
         if ui.button(label).clicked() {

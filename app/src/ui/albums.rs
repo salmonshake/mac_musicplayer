@@ -141,13 +141,19 @@ pub fn show_genres(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 /// A (name, track count) table; returns the clicked name.
-fn name_count_table(ui: &mut egui::Ui, rows: &[(String, u32)], name_header: &str) -> Option<String> {
+fn name_count_table(
+    ui: &mut egui::Ui,
+    rows: &[(String, u32)],
+    name_header: &str,
+) -> Option<String> {
     let (builder, row_x, colors) = table::builder(ui);
     let mut clicked = None;
     builder
         .column(Column::initial(320.0).clip(true))
         .column(Column::remainder())
-        .header(HEADER_HEIGHT, |h| table::header_row(h, &[name_header, "Tracks"]))
+        .header(HEADER_HEIGHT, |h| {
+            table::header_row(h, &[name_header, "Tracks"])
+        })
         .body(|body| {
             body.rows(ROW_HEIGHT, rows.len(), |mut row| {
                 let i = row.index();

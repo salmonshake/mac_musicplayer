@@ -1,8 +1,8 @@
 //! Sidebar panel with navigation items, genre list, and folder management.
 
-use eframe::egui;
 use crate::state::{AppState, Nav};
-use crate::style::{subtle_fill, PANEL_MARGIN, SIDEBAR_WIDTH};
+use crate::style::{PANEL_MARGIN, SIDEBAR_WIDTH, subtle_fill};
+use eframe::egui;
 
 /// Show the left sidebar panel.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
@@ -34,11 +34,16 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 let mut remove: Option<std::path::PathBuf> = None;
                 for (_, p) in &state.folders {
                     ui.horizontal(|ui| {
-                        let name = p
-                            .file_name()
-                            .map_or_else(|| p.display().to_string(), |s| s.to_string_lossy().into_owned());
+                        let name = p.file_name().map_or_else(
+                            || p.display().to_string(),
+                            |s| s.to_string_lossy().into_owned(),
+                        );
                         ui.label(name).on_hover_text(p.display().to_string());
-                        if ui.small_button("−").on_hover_text("Remove from library (files are not deleted)").clicked() {
+                        if ui
+                            .small_button("−")
+                            .on_hover_text("Remove from library (files are not deleted)")
+                            .clicked()
+                        {
                             remove = Some(p.clone());
                         }
                     });
@@ -47,7 +52,9 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                     state.remove_folder(&p);
                 }
                 if ui.button("Add folder...").clicked()
-                    && let Some(p) = rfd::FileDialog::new().set_title("Choose a music folder").pick_folder()
+                    && let Some(p) = rfd::FileDialog::new()
+                        .set_title("Choose a music folder")
+                        .pick_folder()
                 {
                     state.add_folder(p);
                 }
@@ -127,7 +134,11 @@ fn genre_item(ui: &mut egui::Ui, state: &mut AppState, g: &str, n: u32) {
 
 fn playlist_item(ui: &mut egui::Ui, state: &mut AppState, name: &str) {
     // Inline rename: a text field replaces the row while it is being renamed.
-    if let Some((_, mut buf)) = state.renaming_playlist.clone().filter(|(old, _)| old == name) {
+    if let Some((_, mut buf)) = state
+        .renaming_playlist
+        .clone()
+        .filter(|(old, _)| old == name)
+    {
         let r = ui.add(egui::TextEdit::singleline(&mut buf).desired_width(ui.available_width()));
         if std::mem::take(&mut state.rename_focus) {
             r.request_focus();

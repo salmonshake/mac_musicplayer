@@ -74,10 +74,7 @@ fn cmd_scan(db_path: &Path) {
             }
             ScanEvent::Finished { folder, stats } => {
                 if stats.folder_missing {
-                    println!(
-                        "{}: folder missing (tracks kept)",
-                        folder.display()
-                    );
+                    println!("{}: folder missing (tracks kept)", folder.display());
                 } else {
                     println!(
                         "{}: +{} ~{} -{} ={} errors {}",
@@ -135,7 +132,10 @@ fn cmd_stats(db_path: &Path) {
 
 /// `lib <db> watch`
 fn cmd_watch(db_path: &Path) {
-    match LibraryWatcher::start(db_path.to_path_buf(), std::time::Duration::from_millis(1000)) {
+    match LibraryWatcher::start(
+        db_path.to_path_buf(),
+        std::time::Duration::from_millis(1000),
+    ) {
         Ok((_, events)) => {
             println!("watching... (Ctrl+C to stop)");
             while let Ok(event) = events.recv() {
@@ -157,10 +157,7 @@ fn print_scan_event(event: &ScanEvent) {
         }
         ScanEvent::Finished { folder, stats } => {
             if stats.folder_missing {
-                println!(
-                    "{}: folder missing (tracks kept)",
-                    folder.display()
-                );
+                println!("{}: folder missing (tracks kept)", folder.display());
             } else {
                 println!(
                     "{}: +{} ~{} -{} ={} errors {}",

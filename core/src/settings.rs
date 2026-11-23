@@ -72,14 +72,32 @@ impl Settings {
     pub fn parse(text: &str) -> Self {
         let mut s = Settings::default();
         for line in text.lines() {
-            let Some((k, v)) = line.split_once('=') else { continue };
+            let Some((k, v)) = line.split_once('=') else {
+                continue;
+            };
             match k.trim() {
-                "theme" => { if let Some(t) = ThemeMode::from_str_opt(v) { s.theme = t; } }
-                "bit_perfect" => { if let Some(b) = parse_bool(v) { s.bit_perfect = b; } }
-                "hog_mode" => { if let Some(b) = parse_bool(v) { s.hog_mode = b; } }
+                "theme" => {
+                    if let Some(t) = ThemeMode::from_str_opt(v) {
+                        s.theme = t;
+                    }
+                }
+                "bit_perfect" => {
+                    if let Some(b) = parse_bool(v) {
+                        s.bit_perfect = b;
+                    }
+                }
+                "hog_mode" => {
+                    if let Some(b) = parse_bool(v) {
+                        s.hog_mode = b;
+                    }
+                }
                 "output_device" => {
                     let v = v.trim();
-                    s.output_device = if v.is_empty() { None } else { Some(v.to_string()) };
+                    s.output_device = if v.is_empty() {
+                        None
+                    } else {
+                        Some(v.to_string())
+                    };
                 }
                 _ => {}
             }
@@ -88,12 +106,20 @@ impl Settings {
     }
 
     pub fn to_text(&self) -> String {
-        format!("theme={}\nbit_perfect={}\nhog_mode={}\noutput_device={}\n", self.theme.as_str(), on_off(self.bit_perfect), on_off(self.hog_mode), self.output_device.as_deref().unwrap_or(""))
+        format!(
+            "theme={}\nbit_perfect={}\nhog_mode={}\noutput_device={}\n",
+            self.theme.as_str(),
+            on_off(self.bit_perfect),
+            on_off(self.hog_mode),
+            self.output_device.as_deref().unwrap_or("")
+        )
     }
 
     /// Loads settings; a missing or unreadable file gives the defaults.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path).map(|t| Self::parse(&t)).unwrap_or_default()
+        std::fs::read_to_string(path)
+            .map(|t| Self::parse(&t))
+            .unwrap_or_default()
     }
 
     /// Writes settings atomically (tmp file, then rename).
@@ -118,9 +144,15 @@ mod tests {
     #[test]
     fn parse_and_roundtrip() {
         assert_eq!(Settings::parse("theme=dark\n").theme, ThemeMode::Dark);
-        assert_eq!(Settings::parse("# c\nfoo=1\ntheme = light \n").theme, ThemeMode::Light);
+        assert_eq!(
+            Settings::parse("# c\nfoo=1\ntheme = light \n").theme,
+            ThemeMode::Light
+        );
         assert_eq!(Settings::parse("theme=purple").theme, ThemeMode::System);
-        let s = Settings { theme: ThemeMode::Light, ..Default::default() };
+        let s = Settings {
+            theme: ThemeMode::Light,
+            ..Default::default()
+        };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
 
@@ -129,7 +161,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("settings.txt");
         assert_eq!(Settings::load(&p), Settings::default());
-        let s = Settings { theme: ThemeMode::Dark, ..Default::default() };
+        let s = Settings {
+            theme: ThemeMode::Dark,
+            ..Default::default()
+        };
         s.save(&p).unwrap();
         assert_eq!(Settings::load(&p), s);
     }
@@ -143,7 +178,12 @@ mod tests {
 
         assert!(!Settings::parse("bit_perfect=maybe").bit_perfect);
 
-        let s = Settings { theme: ThemeMode::Dark, bit_perfect: true, hog_mode: true, ..Default::default() };
+        let s = Settings {
+            theme: ThemeMode::Dark,
+            bit_perfect: true,
+            hog_mode: true,
+            ..Default::default()
+        };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
 
@@ -154,7 +194,10 @@ mod tests {
 
         assert_eq!(Settings::parse("output_device=\n").output_device, None);
 
-        let s = Settings { output_device: Some("BuiltInSpeakerDevice".into()), ..Default::default() };
+        let s = Settings {
+            output_device: Some("BuiltInSpeakerDevice".into()),
+            ..Default::default()
+        };
         assert_eq!(Settings::parse(&s.to_text()), s);
     }
 }

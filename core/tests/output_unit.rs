@@ -118,11 +118,17 @@ fn test_render_into_set_volume_clamp() {
     let shared = RenderShared::new();
     // set_volume(2.0) should clamp to 1.0
     shared.set_volume(2.0);
-    assert!((shared.volume() - 1.0).abs() < 1e-6, "volume should be clamped to 1.0");
+    assert!(
+        (shared.volume() - 1.0).abs() < 1e-6,
+        "volume should be clamped to 1.0"
+    );
 
     // set_volume(-1.0) should clamp to 0.0
     shared.set_volume(-1.0);
-    assert!((shared.volume() - 0.0).abs() < 1e-6, "volume should be clamped to 0.0");
+    assert!(
+        (shared.volume() - 0.0).abs() < 1e-6,
+        "volume should be clamped to 0.0"
+    );
 }
 
 #[test]

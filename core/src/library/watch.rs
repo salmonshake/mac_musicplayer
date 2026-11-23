@@ -8,13 +8,13 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use notify::{RecursiveMode, RecommendedWatcher, Watcher};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::db::Library;
 use super::scan::scan_folder;
@@ -64,7 +64,8 @@ impl LibraryWatcher {
 
         // 2. Create the OS file-system watcher.
         let (fs_tx, fs_rx) = channel::<notify::Result<notify::Event>>();
-        let mut watcher = notify::recommended_watcher(fs_tx).map_err(|e| LibraryError::Watch(e.to_string()))?;
+        let mut watcher =
+            notify::recommended_watcher(fs_tx).map_err(|e| LibraryError::Watch(e.to_string()))?;
 
         // 3. Register each existing folder for recursive watching.
         //    Keep (registered path, canonical path) pairs: FSEvents reports

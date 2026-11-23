@@ -1,7 +1,7 @@
 //! Background album-artwork loader: disk cache + thumbnail decoding.
 
 use super::cache::ArtworkCache;
-use super::thumb::{decode_rgba, Thumb};
+use super::thumb::{Thumb, decode_rgba};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;

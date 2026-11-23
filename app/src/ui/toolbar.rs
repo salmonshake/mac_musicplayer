@@ -84,13 +84,20 @@ fn output_mode_options(ui: &mut egui::Ui, state: &mut AppState) {
     let mut bp = state.settings.bit_perfect;
     // Allow turning it off even when the device no longer supports it.
     let r = ui
-        .add_enabled(available || bp, egui::Checkbox::new(&mut bp, "Bit-perfect mode"))
+        .add_enabled(
+            available || bp,
+            egui::Checkbox::new(&mut bp, "Bit-perfect mode"),
+        )
         .on_hover_text("Match the device sample rate to each track; volume fixed at 100%");
     if r.changed() {
         state.set_bit_perfect(bp);
     }
     if !available {
-        ui.label(egui::RichText::new("Not available on Bluetooth or AirPlay outputs").small().weak());
+        ui.label(
+            egui::RichText::new("Not available on Bluetooth or AirPlay outputs")
+                .small()
+                .weak(),
+        );
     }
 
     let mut hog = state.settings.hog_mode;

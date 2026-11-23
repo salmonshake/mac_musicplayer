@@ -8,11 +8,7 @@ pub fn parse_m3u(text: &str, base: &Path) -> Vec<PathBuf> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| {
             let p = PathBuf::from(l);
-            if p.is_absolute() {
-                p
-            } else {
-                base.join(p)
-            }
+            if p.is_absolute() { p } else { base.join(p) }
         })
         .collect()
 }

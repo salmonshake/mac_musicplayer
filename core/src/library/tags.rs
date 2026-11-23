@@ -65,7 +65,10 @@ pub fn read_meta(path: &Path) -> Result<TrackMeta, LibraryError> {
         meta.artist = t.artist().map(|s| s.to_string()).unwrap_or_default();
         meta.album = t.album().map(|s| s.to_string()).unwrap_or_default();
         meta.genre = t.genre().map(|s| s.to_string()).unwrap_or_default();
-        meta.album_artist = t.get_string(ItemKey::AlbumArtist).unwrap_or_default().to_string();
+        meta.album_artist = t
+            .get_string(ItemKey::AlbumArtist)
+            .unwrap_or_default()
+            .to_string();
         meta.track_no = t.track();
         meta.disc_no = t.disk();
         meta.year = t.date().map(|d| u32::from(d.year));

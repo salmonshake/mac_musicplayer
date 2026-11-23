@@ -1,15 +1,15 @@
 //! Application state and background scanning / watching.
 
+use crate::media::MediaAction;
 use eframe::egui;
 use mmp_core::library::{
-    scan_all_in_background, AlbumRow, Library, LibraryWatcher, ScanEvent, ScanHandle, TrackFilter,
-    TrackRow,
+    AlbumRow, Library, LibraryWatcher, ScanEvent, ScanHandle, TrackFilter, TrackRow,
+    scan_all_in_background,
 };
 use mmp_core::paths;
+use mmp_core::player::{PlayState, Player, PlayerStatus};
 use mmp_core::playlist::{PlaylistError, PlaylistStore};
-use mmp_core::player::{Player, PlayerStatus, PlayState};
 use mmp_core::settings::{Settings, ThemeMode};
-use crate::media::MediaAction;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -45,12 +45,20 @@ pub fn unique_playlist_name(existing: &[String]) -> String {
 /// `positions[i]` is the playlist-file position of display row `i`
 /// (tracks missing from the library are not displayed).
 pub fn playlist_move_target(positions: &[usize], row: usize, up: bool) -> Option<(usize, usize)> {
-    let neighbor = if up { row.checked_sub(1)? } else { row.checked_add(1)? };
+    let neighbor = if up {
+        row.checked_sub(1)?
+    } else {
+        row.checked_add(1)?
+    };
     Some((*positions.get(row)?, *positions.get(neighbor)?))
 }
 
 /// Stores `result` in `dst`; on error clears `dst` and reports it on the status line.
-fn load_into<T, E: std::fmt::Display>(status: &mut String, dst: &mut Vec<T>, result: Result<Vec<T>, E>) {
+fn load_into<T, E: std::fmt::Display>(
+    status: &mut String,
+    dst: &mut Vec<T>,
+    result: Result<Vec<T>, E>,
+) {
     match result {
         Ok(v) => *dst = v,
         Err(e) => {
@@ -141,12 +149,15 @@ impl AppState {
         let db_path = paths::library_db_path().map_err(|e| e.to_string())?;
         let lib = Library::open(&db_path).map_err(|e| e.to_string())?;
         let settings_path = paths::settings_path().ok();
-        let settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
-        let (playlist_store, store_err) =
-            match paths::playlists_dir().and_then(PlaylistStore::new) {
-                Ok(st) => (Some(st), None),
-                Err(e) => (None, Some(format!("Playlists unavailable: {e}"))),
-            };
+        let settings = settings_path
+            .as_deref()
+            .map(Settings::load)
+            .unwrap_or_default();
+        let (playlist_store, store_err) = match paths::playlists_dir().and_then(PlaylistStore::new)
+        {
+            Ok(st) => (Some(st), None),
+            Err(e) => (None, Some(format!("Playlists unavailable: {e}"))),
+        };
         let mut s = Self {
             lib,
             db_path,
@@ -186,7 +197,8 @@ impl AppState {
         if s.settings.output_device.is_some() {
             s.player.set_device(s.settings.output_device.clone());
         }
-        s.player.set_output_mode(s.settings.bit_perfect, s.settings.hog_mode);
+        s.player
+            .set_output_mode(s.settings.bit_perfect, s.settings.hog_mode);
         Ok(s)
     }
 
@@ -216,10 +228,24 @@ impl AppState {
         self.playlist_positions.clear();
         let search = self.search_opt();
         let filter = match self.nav.clone() {
-            Nav::AllTracks => TrackFilter { search, ..Default::default() },
-            Nav::Album(key) => TrackFilter { album_key: Some(key), ..Default::default() },
-            Nav::Artist(a) => TrackFilter { artist: Some(a), search, ..Default::default() },
-            Nav::Genre(g) => TrackFilter { genre: Some(g), search, ..Default::default() },
+            Nav::AllTracks => TrackFilter {
+                search,
+                ..Default::default()
+            },
+            Nav::Album(key) => TrackFilter {
+                album_key: Some(key),
+                ..Default::default()
+            },
+            Nav::Artist(a) => TrackFilter {
+                artist: Some(a),
+                search,
+                ..Default::default()
+            },
+            Nav::Genre(g) => TrackFilter {
+                genre: Some(g),
+                search,
+                ..Default::default()
+            },
             Nav::Playlist(name) => return self.load_playlist_tracks(&name),
             Nav::Albums => {
                 let albums = self.lib.list_albums(search.as_deref());
@@ -230,7 +256,11 @@ impl AppState {
             }
             Nav::Genres => return,
         };
-        load_into(&mut self.status, &mut self.tracks, self.lib.list_tracks(&filter));
+        load_into(
+            &mut self.status,
+            &mut self.tracks,
+            self.lib.list_tracks(&filter),
+        );
     }
 
     /// Reloads the playlist name list from `playlist_store`.
@@ -387,9 +417,10 @@ impl AppState {
 
     /// Removes display row `track_index` from the playlist being viewed.
     pub fn remove_from_playlist(&mut self, track_index: usize) {
-        let (Some(name), Some(&pos)) =
-            (self.current_playlist(), self.playlist_positions.get(track_index))
-        else {
+        let (Some(name), Some(&pos)) = (
+            self.current_playlist(),
+            self.playlist_positions.get(track_index),
+        ) else {
             return;
         };
         if self.playlist_op("remove from playlist", |st| st.remove_at(&name, pos)) {
@@ -409,7 +440,11 @@ impl AppState {
         };
         if self.playlist_op("move in playlist", |st| st.move_item(&name, from, to)) {
             self.reload();
-            let row = if up { track_index.saturating_sub(1) } else { track_index + 1 };
+            let row = if up {
+                track_index.saturating_sub(1)
+            } else {
+                track_index + 1
+            };
             self.selected_track = Some(row.min(self.tracks.len().saturating_sub(1)));
         }
     }
@@ -422,8 +457,11 @@ impl AppState {
         let mut changed = false;
 
         // Full scan.
-        let scan_events: Vec<ScanEvent> =
-            self.scan.as_ref().map(|h| h.events.try_iter().collect()).unwrap_or_default();
+        let scan_events: Vec<ScanEvent> = self
+            .scan
+            .as_ref()
+            .map(|h| h.events.try_iter().collect())
+            .unwrap_or_default();
         let mut done = false;
         for ev in scan_events {
             match ev {
@@ -519,7 +557,8 @@ impl AppState {
 
     /// Sends the saved output mode to the player and saves the settings.
     fn apply_output_mode(&mut self) {
-        self.player.set_output_mode(self.settings.bit_perfect, self.settings.hog_mode);
+        self.player
+            .set_output_mode(self.settings.bit_perfect, self.settings.hog_mode);
         self.save_settings();
     }
 
@@ -553,8 +592,8 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::{playlist_move_target, theme_pref, unique_playlist_name};
-    use mmp_core::settings::ThemeMode;
     use eframe::egui;
+    use mmp_core::settings::ThemeMode;
 
     #[test]
     fn test_unique_playlist_name_empty() {
@@ -570,10 +609,8 @@ mod tests {
 
     #[test]
     fn test_unique_playlist_name_two_taken() {
-        let result = unique_playlist_name(&[
-            "New Playlist".to_owned(),
-            "New Playlist 2".to_owned(),
-        ]);
+        let result =
+            unique_playlist_name(&["New Playlist".to_owned(), "New Playlist 2".to_owned()]);
         assert_eq!(result, "New Playlist 3");
     }
 

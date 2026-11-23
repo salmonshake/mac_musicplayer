@@ -1,8 +1,8 @@
 //! Up Next panel: shows upcoming queued tracks with click-to-jump.
 
-use eframe::egui;
 use crate::state::AppState;
 use crate::ui::tracks::format_duration;
+use eframe::egui;
 
 /// Show the "Up Next" right panel.
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
@@ -21,7 +21,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
 
             for &idx in upcoming {
                 if let Some(track) = state.queue_items.get(idx) {
-                    let label = format!("{title} — {artist}", title = track.title, artist = track.artist);
+                    let label = format!(
+                        "{title} — {artist}",
+                        title = track.title,
+                        artist = track.artist
+                    );
                     let b = egui::Button::new(())
                         .left_text(&label)
                         .right_text(format_duration(track.duration_ms))

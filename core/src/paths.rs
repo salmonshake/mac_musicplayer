@@ -28,9 +28,8 @@ fn migrate_legacy_dir(home: &std::path::Path) -> std::io::Result<()> {
 /// Fails with `ErrorKind::NotFound` when the `HOME` environment variable
 /// is not set.
 pub fn data_dir() -> std::io::Result<std::path::PathBuf> {
-    let home = std::env::var_os("HOME").ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set")
-    })?;
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is not set"))?;
     let home = std::path::Path::new(&home);
     migrate_legacy_dir(home)?;
     let dir = data_dir_in(home);
@@ -170,7 +169,11 @@ mod tests {
     fn settings_path_in_correct() {
         let tmp = std::env::temp_dir();
         let result = settings_path_in(&tmp);
-        let expected = tmp.join("Library").join("Application Support").join(APP_NAME).join("settings.txt");
+        let expected = tmp
+            .join("Library")
+            .join("Application Support")
+            .join(APP_NAME)
+            .join("settings.txt");
         assert_eq!(result, expected);
     }
 }

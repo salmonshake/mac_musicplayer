@@ -1,6 +1,6 @@
 //! Transport icons drawn as rounded shapes (font glyphs like ▶ have sharp corners).
 
-use eframe::egui::{self, pos2, vec2, Color32, Painter, Pos2, Rect, Shape, Stroke};
+use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
 /// Polygon points with each corner rounded by a quadratic curve of radius r.
 pub fn rounded_polygon(corners: &[Pos2], r: f32, steps: usize) -> Vec<Pos2> {
@@ -27,14 +27,34 @@ pub fn rounded_polygon(corners: &[Pos2], r: f32, steps: usize) -> Vec<Pos2> {
     out
 }
 
-fn triangle(p: &Painter, left: f32, right: f32, cy: f32, half_h: f32, pointing_right: bool, color: Color32) {
+fn triangle(
+    p: &Painter,
+    left: f32,
+    right: f32,
+    cy: f32,
+    half_h: f32,
+    pointing_right: bool,
+    color: Color32,
+) {
     let pts = if pointing_right {
-        [pos2(left, cy - half_h), pos2(right, cy), pos2(left, cy + half_h)]
+        [
+            pos2(left, cy - half_h),
+            pos2(right, cy),
+            pos2(left, cy + half_h),
+        ]
     } else {
-        [pos2(right, cy - half_h), pos2(right, cy + half_h), pos2(left, cy)]
+        [
+            pos2(right, cy - half_h),
+            pos2(right, cy + half_h),
+            pos2(left, cy),
+        ]
     };
     let r = half_h * 0.35;
-    p.add(Shape::convex_polygon(rounded_polygon(&pts, r, 6), color, Stroke::NONE));
+    p.add(Shape::convex_polygon(
+        rounded_polygon(&pts, r, 6),
+        color,
+        Stroke::NONE,
+    ));
 }
 
 /// Play: a triangle with rounded corners, fitted in rect.
@@ -81,8 +101,17 @@ pub fn skip(p: &Painter, rect: Rect, color: Color32, forward: bool) {
 }
 
 /// A clickable icon of the given size; when disabled it is dimmed and ignores clicks.
-pub fn icon_button(ui: &mut egui::Ui, size: f32, enabled: bool, draw: impl Fn(&Painter, Rect, Color32)) -> egui::Response {
-    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+pub fn icon_button(
+    ui: &mut egui::Ui,
+    size: f32,
+    enabled: bool,
+    draw: impl Fn(&Painter, Rect, Color32),
+) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), sense);
     let v = ui.visuals();
     let color = if !enabled {
@@ -102,10 +131,18 @@ mod tests {
 
     #[test]
     fn rounded_polygon_points() {
-        let sq = [pos2(0.0, 0.0), pos2(10.0, 0.0), pos2(10.0, 10.0), pos2(0.0, 10.0)];
+        let sq = [
+            pos2(0.0, 0.0),
+            pos2(10.0, 0.0),
+            pos2(10.0, 10.0),
+            pos2(0.0, 10.0),
+        ];
         let pts = rounded_polygon(&sq, 2.0, 4);
         assert_eq!(pts.len(), 4 * 5);
-        assert!(pts.iter().all(|p| (0.0..=10.0).contains(&p.x) && (0.0..=10.0).contains(&p.y)));
+        assert!(
+            pts.iter()
+                .all(|p| (0.0..=10.0).contains(&p.x) && (0.0..=10.0).contains(&p.y))
+        );
         let is_corner = |p: &Pos2| (p.x - 10.0).abs() < 1e-3 && p.y.abs() < 1e-3;
         assert!(!pts.iter().any(is_corner), "corner should be cut");
         let sharp = rounded_polygon(&sq, 0.0, 4);

@@ -36,7 +36,8 @@ fn test_ext_audio_file_full_flow() {
     let total_frames = file.length_frames().expect("Failed to get length frames");
     assert_eq!(total_frames, 132300);
 
-    file.set_client_f32_interleaved(&info).expect("Failed to set client format");
+    file.set_client_f32_interleaved(&info)
+        .expect("Failed to set client format");
 
     let mut total_read_frames = 0;
     let mut buf = vec![0.0f32; 4096 * 2];
@@ -67,7 +68,10 @@ fn test_heaac_aac_sample_rates() {
         assert_eq!(info.sample_rate, 44100.0);
         assert_eq!(info.channels, 2);
     } else {
-        eprintln!("Skipping HE-AAC test: {} does not exist", heaac_path.display());
+        eprintln!(
+            "Skipping HE-AAC test: {} does not exist",
+            heaac_path.display()
+        );
     }
 
     if aac_path.exists() {

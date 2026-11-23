@@ -8,10 +8,10 @@ mod scanner;
 mod tags;
 mod watch;
 
-pub use db::{Library, FileState};
+pub use db::{FileState, Library};
 pub use error::LibraryError;
 pub use query::{AlbumRow, TrackFilter, TrackRow};
-pub use scan::{is_audio_path, scan_folder, ScanStats};
+pub use scan::{ScanStats, is_audio_path, scan_folder};
 pub use scanner::{ScanEvent, ScanHandle, scan_all_in_background};
-pub use tags::{read_meta, TrackMeta};
+pub use tags::{TrackMeta, read_meta};
 pub use watch::LibraryWatcher;

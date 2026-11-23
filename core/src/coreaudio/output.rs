@@ -1,23 +1,24 @@
-use std::ptr::NonNull;
-use std::ffi::c_void;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use crate::coreaudio::device::DeviceId;
+use crate::coreaudio::error::{CoreAudioError, Result, check};
+use crate::coreaudio::ext_audio_file::StreamInfo;
 use objc2_audio_toolbox::{
-    AudioComponentDescription, AudioComponentFindNext, AudioComponentInstanceNew, AudioComponentInstanceDispose,
-    AudioUnit, AudioUnitInitialize, AudioUnitUninitialize, AudioUnitSetProperty, AudioOutputUnitStart,
-    AudioOutputUnitStop, AURenderCallbackStruct, AudioUnitRenderActionFlags, kAudioUnitType_Output,
-    kAudioUnitSubType_DefaultOutput, kAudioUnitSubType_HALOutput, kAudioUnitManufacturer_Apple,
-    kAudioUnitProperty_StreamFormat, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input,
-    kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
+    AURenderCallbackStruct, AudioComponentDescription, AudioComponentFindNext,
+    AudioComponentInstanceDispose, AudioComponentInstanceNew, AudioOutputUnitStart,
+    AudioOutputUnitStop, AudioUnit, AudioUnitInitialize, AudioUnitRenderActionFlags,
+    AudioUnitSetProperty, AudioUnitUninitialize, kAudioOutputUnitProperty_CurrentDevice,
+    kAudioUnitManufacturer_Apple, kAudioUnitProperty_SetRenderCallback,
+    kAudioUnitProperty_StreamFormat, kAudioUnitScope_Global, kAudioUnitScope_Input,
+    kAudioUnitSubType_DefaultOutput, kAudioUnitSubType_HALOutput, kAudioUnitType_Output,
 };
 use objc2_core_audio_types::{
-    AudioBufferList, AudioTimeStamp, kAudioFormatFlagsNativeFloatPacked, kAudioFormatLinearPCM,
-    AudioStreamBasicDescription,
+    AudioBufferList, AudioStreamBasicDescription, AudioTimeStamp,
+    kAudioFormatFlagsNativeFloatPacked, kAudioFormatLinearPCM,
 };
-use crate::coreaudio::device::DeviceId;
-use crate::coreaudio::error::{check, CoreAudioError, Result};
-use crate::coreaudio::ext_audio_file::StreamInfo;
 use rtrb::Consumer;
+use std::ffi::c_void;
+use std::ptr::NonNull;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// オーディオコールバックと共有するアトミック値。
 ///
@@ -45,7 +46,8 @@ impl RenderShared {
 
     /// 音量を設定。0.0 未満は 0.0、1.0 超は 1.0 に丸める。
     pub fn set_volume(&self, v: f32) {
-        self.volume_bits.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+        self.volume_bits
+            .store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
     /// フラッシュを要求する。次のコールバックでリングの残りデータを捨てて無音を出力し、
@@ -93,7 +95,11 @@ impl OutputUnit {
     /// 指定されたデバイスに固定する。
     ///
     /// レンダーコールバックを登録して Initialize する（Start はしない）。
-    pub fn new(info: &StreamInfo, consumer: Consumer<f32>, device: Option<DeviceId>) -> Result<Self> {
+    pub fn new(
+        info: &StreamInfo,
+        consumer: Consumer<f32>,
+        device: Option<DeviceId>,
+    ) -> Result<Self> {
         let mut desc = AudioComponentDescription {
             componentType: kAudioUnitType_Output,
             componentSubType: if device.is_some() {
@@ -107,14 +113,15 @@ impl OutputUnit {
         };
 
         // SAFETY: desc is stack-allocated and remains valid for the duration of the call.
-        let comp = unsafe {
-            AudioComponentFindNext(std::ptr::null_mut(), NonNull::from(&mut desc))
-        };
+        let comp =
+            unsafe { AudioComponentFindNext(std::ptr::null_mut(), NonNull::from(&mut desc)) };
 
         if comp.is_null() {
-            return Err(CoreAudioError::ComponentNotFound(
-                if device.is_some() { "HALOutput" } else { "DefaultOutput" },
-            ));
+            return Err(CoreAudioError::ComponentNotFound(if device.is_some() {
+                "HALOutput"
+            } else {
+                "DefaultOutput"
+            }));
         }
 
         let mut unit = std::ptr::null_mut();
@@ -165,7 +172,11 @@ impl OutputUnit {
             return Err(e);
         }
 
-        Ok(Self { unit, state, shared })
+        Ok(Self {
+            unit,
+            state,
+            shared,
+        })
     }
 
     /// コールバックと共有する `RenderShared` のコピーを返す。
@@ -238,10 +249,7 @@ fn configure(unit: AudioUnit, info: &StreamInfo, state: *mut RenderState) -> Res
 
     // SAFETY: unit is valid.
     unsafe {
-        check(
-            AudioUnitInitialize(unit),
-            "AudioUnitInitialize",
-        )?;
+        check(AudioUnitInitialize(unit), "AudioUnitInitialize")?;
     }
 
     Ok(())
@@ -276,7 +284,9 @@ pub fn render_into(
     }
     rest.fill(0.0);
     if let Some(frames) = got.checked_div(channels) {
-        shared.frames_played.fetch_add(frames as u64, Ordering::Relaxed);
+        shared
+            .frames_played
+            .fetch_add(frames as u64, Ordering::Relaxed);
     }
 }
 
@@ -312,9 +322,8 @@ unsafe extern "C-unwind" fn render_callback(
 
         let sample_len = (buffer.mDataByteSize as usize) / 4;
         // SAFETY: buffer.mData is valid and sample_len is correct.
-        let slice: &mut [f32] = unsafe {
-            std::slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), sample_len)
-        };
+        let slice: &mut [f32] =
+            unsafe { std::slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), sample_len) };
 
         render_into(slice, state.channels, &mut state.consumer, &state.shared);
     }

@@ -36,7 +36,10 @@ impl DevHooks {
 
     /// Theme and list views, applied once at startup.
     pub fn apply_startup(&self, ctx: &egui::Context, s: &mut AppState) {
-        if let Some(t) = std::env::var("MMP_THEME").ok().and_then(|v| ThemeMode::from_str_opt(&v)) {
+        if let Some(t) = std::env::var("MMP_THEME")
+            .ok()
+            .and_then(|v| ThemeMode::from_str_opt(&v))
+        {
             ctx.set_theme(state::theme_pref(t));
         }
         match std::env::var("MMP_NAV").as_deref() {
@@ -111,9 +114,7 @@ impl Screenshotter {
         let ready = (!scanning && self.frames >= 30) || self.frames >= 600;
         if ready && !self.requested {
             self.requested = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
-                Default::default(),
-            ));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
         }
     }
 

@@ -4,14 +4,17 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use mmp_core::library::{is_audio_path, scan_folder, Library};
+use mmp_core::library::{Library, is_audio_path, scan_folder};
 
 /// Copies *src* directory recursively into *dst*.
 fn copy_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use walkdir::WalkDir;
     for entry in WalkDir::new(src).follow_links(false) {
         let entry = entry?;
-        let relative = entry.path().strip_prefix(src).map_err(|e| format!("strip_prefix: {e}"))?;
+        let relative = entry
+            .path()
+            .strip_prefix(src)
+            .map_err(|e| format!("strip_prefix: {e}"))?;
         let target = dst.join(relative);
         if entry.file_type().is_dir() {
             fs::create_dir_all(&target)?;
@@ -32,8 +35,7 @@ fn setup() -> Option<tempfile::TempDir> {
         return None;
     }
     let tmp = tempfile::tempdir().expect("create tempdir");
-    copy_recursive(&src, tmp.path())
-        .expect("copy testdata/lib into tempdir");
+    copy_recursive(&src, tmp.path()).expect("copy testdata/lib into tempdir");
     Some(tmp)
 }
 
@@ -78,7 +80,10 @@ fn full_diff_cycle() {
 
     // 4th scan: delete track.ogg → removed=1, track_count=3.
     let ogg_path = root.join("AlbumB").join("track.ogg");
-    assert!(ogg_path.exists(), "track.ogg should exist for deletion test");
+    assert!(
+        ogg_path.exists(),
+        "track.ogg should exist for deletion test"
+    );
     fs::remove_file(&ogg_path).expect("delete track.ogg");
     let s4 = scan_folder(&mut lib, root).expect("scan 4");
     assert_eq!(s4.removed, 1);

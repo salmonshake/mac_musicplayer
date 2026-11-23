@@ -1,19 +1,19 @@
-use std::path::Path;
-use std::ptr::{NonNull, null_mut};
-use std::ffi::c_void;
+use crate::coreaudio::error::{CoreAudioError, Result, check};
 use objc2_audio_toolbox::{
-    ExtAudioFileDispose, ExtAudioFileGetProperty, ExtAudioFileOpenURL, ExtAudioFileRead,
-    ExtAudioFileSeek, ExtAudioFileSetProperty, ExtAudioFileRef, kExtAudioFileProperty_ClientDataFormat,
+    AudioFileGetProperty, AudioFileGetPropertyInfo, AudioFileID, ExtAudioFileDispose,
+    ExtAudioFileGetProperty, ExtAudioFileOpenURL, ExtAudioFileRead, ExtAudioFileRef,
+    ExtAudioFileSeek, ExtAudioFileSetProperty, kAudioFilePropertyFormatList,
+    kExtAudioFileProperty_AudioFile, kExtAudioFileProperty_ClientDataFormat,
     kExtAudioFileProperty_FileDataFormat, kExtAudioFileProperty_FileLengthFrames,
-    kExtAudioFileProperty_AudioFile, kAudioFilePropertyFormatList,
-    AudioFileID, AudioFileGetPropertyInfo, AudioFileGetProperty,
 };
 use objc2_core_audio_types::{
-    kAudioFormatFlagsNativeFloatPacked, kAudioFormatLinearPCM, AudioBuffer, AudioBufferList,
-    AudioStreamBasicDescription, AudioFormatListItem,
+    AudioBuffer, AudioBufferList, AudioFormatListItem, AudioStreamBasicDescription,
+    kAudioFormatFlagsNativeFloatPacked, kAudioFormatLinearPCM,
 };
 use objc2_core_foundation::CFURL;
-use crate::coreaudio::error::{check, CoreAudioError, Result};
+use std::ffi::c_void;
+use std::path::Path;
+use std::ptr::{NonNull, null_mut};
 
 /// Information about the audio file's format.
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +32,8 @@ pub struct ExtAudioFile {
 impl ExtAudioFile {
     /// Opens an audio file from the given path.
     pub fn open(path: &Path) -> Result<Self> {
-        let url = CFURL::from_file_path(path).ok_or_else(|| CoreAudioError::InvalidPath(path.to_path_buf()))?;
+        let url = CFURL::from_file_path(path)
+            .ok_or_else(|| CoreAudioError::InvalidPath(path.to_path_buf()))?;
         let mut raw = null_mut();
         // SAFETY: ExtAudioFileOpenURL is the standard way to open an audio file.
         unsafe {
@@ -42,7 +43,9 @@ impl ExtAudioFile {
             )?;
         }
         if raw.is_null() {
-            return Err(CoreAudioError::Unsupported("ExtAudioFileOpenURL returned null".into()));
+            return Err(CoreAudioError::Unsupported(
+                "ExtAudioFileOpenURL returned null".into(),
+            ));
         }
 
         Ok(Self {
@@ -57,9 +60,17 @@ impl ExtAudioFile {
         // SAFETY: ExtAudioFileGetProperty is safe with valid raw.
         unsafe {
             if check(
-                ExtAudioFileGetProperty(self.raw, kExtAudioFileProperty_AudioFile, NonNull::from(&mut size), NonNull::from(&mut af).cast::<c_void>()),
-                "ExtAudioFileGetProperty (AudioFileID)"
-            ).is_err() || af.is_null() {
+                ExtAudioFileGetProperty(
+                    self.raw,
+                    kExtAudioFileProperty_AudioFile,
+                    NonNull::from(&mut size),
+                    NonNull::from(&mut af).cast::<c_void>(),
+                ),
+                "ExtAudioFileGetProperty (AudioFileID)",
+            )
+            .is_err()
+                || af.is_null()
+            {
                 return None;
             }
         }
@@ -67,7 +78,17 @@ impl ExtAudioFile {
         let mut list_size: u32 = 0;
         // SAFETY: AudioFileGetPropertyInfo is safe with valid af and property.
         unsafe {
-            if check(AudioFileGetPropertyInfo(af, kAudioFilePropertyFormatList, &mut list_size, null_mut()), "AudioFileGetPropertyInfo").is_err() {
+            if check(
+                AudioFileGetPropertyInfo(
+                    af,
+                    kAudioFilePropertyFormatList,
+                    &mut list_size,
+                    null_mut(),
+                ),
+                "AudioFileGetPropertyInfo",
+            )
+            .is_err()
+            {
                 return None;
             }
         }
@@ -78,13 +99,19 @@ impl ExtAudioFile {
         }
 
         // SAFETY: We pre-allocate and initialize with zeros.
-        let mut items: Vec<AudioFormatListItem> = (0..n).map(|_| unsafe { std::mem::zeroed() }).collect();
+        let mut items: Vec<AudioFormatListItem> =
+            (0..n).map(|_| unsafe { std::mem::zeroed() }).collect();
 
         let mut io_size = list_size;
         let ptr = NonNull::new(items.as_mut_ptr().cast::<c_void>())?;
         // SAFETY: `items` holds `n` AudioFormatListItem slots, i.e. `io_size` bytes.
         let status = unsafe {
-            AudioFileGetProperty(af, kAudioFilePropertyFormatList, NonNull::from(&mut io_size), ptr)
+            AudioFileGetProperty(
+                af,
+                kAudioFilePropertyFormatList,
+                NonNull::from(&mut io_size),
+                ptr,
+            )
         };
         if check(status, "AudioFileGetProperty (FormatList)").is_err() {
             return None;
@@ -229,10 +256,7 @@ impl ExtAudioFile {
     pub fn seek(&mut self, frame: i64) -> Result<()> {
         unsafe {
             // SAFETY: ExtAudioFileSeek is safe with a valid raw pointer.
-            check(
-                ExtAudioFileSeek(self.raw, frame),
-                "ExtAudioFileSeek",
-            )?;
+            check(ExtAudioFileSeek(self.raw, frame), "ExtAudioFileSeek")?;
         }
         Ok(())
     }

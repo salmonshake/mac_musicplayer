@@ -1,9 +1,9 @@
 //! Album artwork textures: background loading + in-memory LRU.
 
+use crate::style::subtle_fill;
 use eframe::egui;
 use mmp_core::artwork::cache::ArtworkCache;
 use mmp_core::artwork::loader::ArtworkLoader;
-use crate::style::subtle_fill;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -33,7 +33,12 @@ impl ArtTextures {
                 let ctx = ctx.clone();
                 ArtworkLoader::new(cache, Box::new(move || ctx.request_repaint()))
             });
-        Self { loader, entries: HashMap::new(), tick: 0, cap: MAX_TEXTURES }
+        Self {
+            loader,
+            entries: HashMap::new(),
+            tick: 0,
+            cap: MAX_TEXTURES,
+        }
     }
 
     /// Texture for the album if loaded; otherwise requests it once and returns None.
@@ -48,7 +53,11 @@ impl ArtTextures {
         }
         self.entries.insert(
             album_key.to_string(),
-            Entry { tex: None, pending: true, last_used: self.tick },
+            Entry {
+                tex: None,
+                pending: true,
+                last_used: self.tick,
+            },
         );
         None
     }
@@ -99,7 +108,9 @@ pub fn art_image(ui: &mut egui::Ui, tex: Option<&egui::TextureHandle>, size: f32
             let s = t.size_vec2();
             let scale = size / s.x.max(s.y).max(1.0);
             let fitted = egui::Rect::from_center_size(rect.center(), s * scale);
-            egui::Image::new(t).corner_radius(radius).paint_at(ui, fitted);
+            egui::Image::new(t)
+                .corner_radius(radius)
+                .paint_at(ui, fitted);
         }
         None => {
             ui.painter().rect_filled(rect, radius, subtle_fill(ui, 20));
@@ -112,7 +123,11 @@ mod tests {
     use super::*;
 
     fn entry(last: u64, pending: bool) -> Entry {
-        Entry { tex: None, pending, last_used: last }
+        Entry {
+            tex: None,
+            pending,
+            last_used: last,
+        }
     }
 
     #[test]

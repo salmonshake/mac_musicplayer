@@ -1,7 +1,7 @@
 //! Thumbnail disk cache: stable key, JPEG storage, and no-artwork marker.
 
 use super::source::find_artwork_bytes;
-use super::thumb::{make_thumbnail_jpeg, THUMB_SIZE};
+use super::thumb::{THUMB_SIZE, make_thumbnail_jpeg};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 

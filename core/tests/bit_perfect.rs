@@ -31,7 +31,11 @@ fn write_silent_wav(path: &Path, rate: u32, secs: u32) {
     std::fs::write(path, b).unwrap();
 }
 
-fn wait_for(p: &Player, timeout: Duration, pred: impl Fn(&PlayerStatus) -> bool) -> Option<PlayerStatus> {
+fn wait_for(
+    p: &Player,
+    timeout: Duration,
+    pred: impl Fn(&PlayerStatus) -> bool,
+) -> Option<PlayerStatus> {
     let deadline = Instant::now() + timeout;
     loop {
         let s = p.status();
@@ -103,7 +107,11 @@ fn device_rate_follows_track_and_is_restored() {
             device::nominal_sample_rate(id)
         );
         let s = wait_for(&p, Duration::from_secs(1), |s| !s.bit_perfect).expect("mode off");
-        assert_eq!(s.state, PlayState::Playing, "playback continues after the switch");
+        assert_eq!(
+            s.state,
+            PlayState::Playing,
+            "playback continues after the switch"
+        );
     }));
     drop(p);
     let _ = device::set_nominal_sample_rate(id, original);

@@ -4,14 +4,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use mmp_core::library::{scan_all_in_background, ScanEvent, ScanStats};
+use mmp_core::library::{ScanEvent, ScanStats, scan_all_in_background};
 
 /// Copies *src* directory recursively into *dst*.
 fn copy_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use walkdir::WalkDir;
     for entry in WalkDir::new(src).follow_links(false) {
         let entry = entry?;
-        let relative = entry.path().strip_prefix(src).map_err(|e| format!("strip_prefix: {e}"))?;
+        let relative = entry
+            .path()
+            .strip_prefix(src)
+            .map_err(|e| format!("strip_prefix: {e}"))?;
         let target = dst.join(relative);
         if entry.file_type().is_dir() {
             fs::create_dir_all(&target)?;

@@ -254,12 +254,10 @@ mod tests {
         let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
         store.save("clean", &[]).unwrap();
 
-        let has_tmp = std::fs::read_dir(tmp.path())
-            .unwrap()
-            .any(|e| {
-                let p = e.unwrap().path();
-                p.extension().and_then(|x| x.to_str()) == Some("tmp")
-            });
+        let has_tmp = std::fs::read_dir(tmp.path()).unwrap().any(|e| {
+            let p = e.unwrap().path();
+            p.extension().and_then(|x| x.to_str()) == Some("tmp")
+        });
         assert!(!has_tmp);
     }
 
@@ -361,11 +359,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
 
-        store.save("pl", &[
-            PathBuf::from("/a"),
-            PathBuf::from("/b"),
-            PathBuf::from("/c"),
-        ]).unwrap();
+        store
+            .save(
+                "pl",
+                &[
+                    PathBuf::from("/a"),
+                    PathBuf::from("/b"),
+                    PathBuf::from("/c"),
+                ],
+            )
+            .unwrap();
 
         // index=1 ("b") を削除
         store.remove_at("pl", 1).unwrap();
@@ -385,25 +388,51 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = PlaylistStore::new(tmp.path().to_path_buf()).unwrap();
 
-        store.save("pl", &[
-            PathBuf::from("/a"),
-            PathBuf::from("/b"),
-            PathBuf::from("/c"),
-        ]).unwrap();
+        store
+            .save(
+                "pl",
+                &[
+                    PathBuf::from("/a"),
+                    PathBuf::from("/b"),
+                    PathBuf::from("/c"),
+                ],
+            )
+            .unwrap();
 
         // from=0 の "/a" を to=2 へ → [b, c, a]
         store.move_item("pl", 0, 2).unwrap();
         let loaded = store.load("pl").unwrap();
-        assert_eq!(loaded, vec![PathBuf::from("/b"), PathBuf::from("/c"), PathBuf::from("/a")]);
+        assert_eq!(
+            loaded,
+            vec![
+                PathBuf::from("/b"),
+                PathBuf::from("/c"),
+                PathBuf::from("/a")
+            ]
+        );
 
         // from=2 の "/a" を to=0 へ → [a, b, c]
         store.move_item("pl", 2, 0).unwrap();
         let loaded = store.load("pl").unwrap();
-        assert_eq!(loaded, vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]);
+        assert_eq!(
+            loaded,
+            vec![
+                PathBuf::from("/a"),
+                PathBuf::from("/b"),
+                PathBuf::from("/c")
+            ]
+        );
 
         // 範囲外 (from=99) は何もしない
         store.move_item("pl", 99, 0).unwrap();
         let loaded = store.load("pl").unwrap();
-        assert_eq!(loaded, vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]);
+        assert_eq!(
+            loaded,
+            vec![
+                PathBuf::from("/a"),
+                PathBuf::from("/b"),
+                PathBuf::from("/c")
+            ]
+        );
     }
 }

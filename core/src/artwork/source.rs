@@ -48,9 +48,15 @@ pub fn folder_image(dir: &Path) -> Option<PathBuf> {
     candidates.sort_by(|a, b| {
         let a_name = a.file_stem().map(|s| s.to_string_lossy().to_lowercase());
         let b_name = b.file_stem().map(|s| s.to_string_lossy().to_lowercase());
-        let a_pos = a_name.as_deref().and_then(|s| FOLDER_NAMES.iter().position(|&n| n == s));
-        let b_pos = b_name.as_deref().and_then(|s| FOLDER_NAMES.iter().position(|&n| n == s));
-        a_pos.cmp(&b_pos).then_with(|| a_name.as_deref().cmp(&b_name.as_deref()))
+        let a_pos = a_name
+            .as_deref()
+            .and_then(|s| FOLDER_NAMES.iter().position(|&n| n == s));
+        let b_pos = b_name
+            .as_deref()
+            .and_then(|s| FOLDER_NAMES.iter().position(|&n| n == s));
+        a_pos
+            .cmp(&b_pos)
+            .then_with(|| a_name.as_deref().cmp(&b_name.as_deref()))
     });
     candidates.into_iter().next()
 }
@@ -83,10 +89,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("folder.png"), b"F").unwrap();
         fs::write(tmp.path().join("cover.jpg"), b"C").unwrap();
-        assert_eq!(
-            folder_image(tmp.path()),
-            Some(tmp.path().join("cover.jpg"))
-        );
+        assert_eq!(folder_image(tmp.path()), Some(tmp.path().join("cover.jpg")));
     }
 
     #[test]
@@ -111,10 +114,7 @@ mod tests {
         fs::write(tmp.path().join(".DS_Store"), b"DATA").unwrap();
         fs::write(tmp.path().join("README"), b"readme").unwrap();
         fs::write(tmp.path().join("cover.png"), b"IMG").unwrap();
-        assert_eq!(
-            folder_image(tmp.path()),
-            Some(tmp.path().join("cover.png"))
-        );
+        assert_eq!(folder_image(tmp.path()), Some(tmp.path().join("cover.png")));
     }
 
     #[test]

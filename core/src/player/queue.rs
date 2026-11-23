@@ -51,7 +51,13 @@ impl Queue {
     /// `start` is an index into `items` (clamped to 0 if out of range).
     /// When `shuffle` is true the current track (`items[start]`) is placed
     /// first and the remaining tracks are shuffled with a deterministic seed.
-    pub fn new(items: Vec<PathBuf>, start: usize, shuffle: bool, repeat: RepeatMode, seed: u64) -> Self {
+    pub fn new(
+        items: Vec<PathBuf>,
+        start: usize,
+        shuffle: bool,
+        repeat: RepeatMode,
+        seed: u64,
+    ) -> Self {
         let order: Vec<usize> = (0..items.len()).collect();
         let pos = if start < items.len() { start } else { 0 };
         let mut q = Self {
@@ -337,7 +343,10 @@ mod tests {
         // 3 tracks, start=2 (last): advance_on_end should return None, current stays at 2
         let mut q = Queue::new(
             (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-            2, false, RepeatMode::Off, 42,
+            2,
+            false,
+            RepeatMode::Off,
+            42,
         );
         assert_eq!(q.current().map(|(i, _)| i), Some(2));
         assert!(q.advance_on_end().is_none());
@@ -350,7 +359,10 @@ mod tests {
         // 3 tracks, start=2 (last): advance_on_end wraps to 0, next wraps to 0
         let mut q = Queue::new(
             (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-            2, false, RepeatMode::All, 42,
+            2,
+            false,
+            RepeatMode::All,
+            42,
         );
         assert_eq!(q.current().map(|(i, _)| i), Some(2));
         assert_eq!(q.advance_on_end().map(|(i, _)| i), Some(0));
@@ -359,7 +371,10 @@ mod tests {
         // Fresh queue: next from end should also wrap
         let mut q2 = Queue::new(
             (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-            2, false, RepeatMode::All, 42,
+            2,
+            false,
+            RepeatMode::All,
+            42,
         );
         assert_eq!(q2.next().map(|(i, _)| i), Some(0));
     }
@@ -369,7 +384,10 @@ mod tests {
         // 3 tracks, start=1: advance_on_end returns 1, peek_after_current returns 1, next returns 2
         let mut q = Queue::new(
             (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-            1, false, RepeatMode::One, 42,
+            1,
+            false,
+            RepeatMode::One,
+            42,
         );
         assert_eq!(q.current().map(|(i, _)| i), Some(1));
         assert_eq!(q.advance_on_end().map(|(i, _)| i), Some(1));
@@ -383,7 +401,10 @@ mod tests {
         for mode in [RepeatMode::Off, RepeatMode::All, RepeatMode::One] {
             let mut q = Queue::new(
                 (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-                1, false, mode, 42,
+                1,
+                false,
+                mode,
+                42,
             );
             let peeked = q.peek_after_current().map(|(i, _)| i);
             let advanced = q.advance_on_end().map(|(i, _)| i);
@@ -398,7 +419,10 @@ mod tests {
     fn test_jump_to_item() {
         let mut q = Queue::new(
             (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-            0, false, RepeatMode::Off, 42,
+            0,
+            false,
+            RepeatMode::Off,
+            42,
         );
         // Jump to valid item 2
         assert_eq!(q.jump_to_item(2).map(|(i, _)| i), Some(2));
@@ -407,7 +431,10 @@ mod tests {
         // upcoming from start=0, 3 tracks: [1, 2]
         let mut q2 = Queue::new(
             (0..3).map(|i| PathBuf::from(format!("{i}.flac"))).collect(),
-            0, false, RepeatMode::Off, 42,
+            0,
+            false,
+            RepeatMode::Off,
+            42,
         );
         assert_eq!(q2.upcoming(), vec![1, 2]);
         // After jump to 2, upcoming is empty

@@ -2,24 +2,22 @@ use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
 use objc2_core_audio::{
-    AudioObjectID, AudioObjectPropertyAddress, AudioObjectGetPropertyData,
-    AudioObjectGetPropertyDataSize, AudioObjectSetPropertyData,
+    AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize, AudioObjectID,
+    AudioObjectPropertyAddress, AudioObjectSetPropertyData,
     kAudioDevicePropertyAvailableNominalSampleRates, kAudioDevicePropertyDeviceIsAlive,
     kAudioDevicePropertyDeviceUID, kAudioDevicePropertyHogMode,
-    kAudioDevicePropertyNominalSampleRate,
-    kAudioDevicePropertyStreamConfiguration, kAudioDevicePropertyTransportType,
-    kAudioDeviceTransportTypeAirPlay,
+    kAudioDevicePropertyNominalSampleRate, kAudioDevicePropertyStreamConfiguration,
+    kAudioDevicePropertyTransportType, kAudioDeviceTransportTypeAirPlay,
     kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE,
     kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDevices,
-    kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyScopeOutput,
-    kAudioObjectPropertyName, kAudioObjectPropertyElementMain,
-    kAudioObjectSystemObject,
+    kAudioObjectPropertyElementMain, kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal,
+    kAudioObjectPropertyScopeOutput, kAudioObjectSystemObject,
 };
 use objc2_core_audio_types::{AudioBufferList, AudioValueRange};
-use std::time::{Duration, Instant};
 use objc2_core_foundation::{CFRetained, CFString};
+use std::time::{Duration, Instant};
 
-use crate::coreaudio::error::{check, CoreAudioError, Result};
+use crate::coreaudio::error::{CoreAudioError, Result, check};
 
 /// A device identifier (Core Audio `AudioObjectID`).
 pub type DeviceId = u32;
@@ -151,8 +149,10 @@ fn get_string(id: AudioObjectID, selector: u32) -> Result<String> {
 }
 
 fn output_channels(id: AudioObjectID) -> Result<u32> {
-    let mut a =
-        addr(kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeOutput);
+    let mut a = addr(
+        kAudioDevicePropertyStreamConfiguration,
+        kAudioObjectPropertyScopeOutput,
+    );
     // SAFETY: AudioObjectGetPropertyDataSize is called with a valid property
     // address for a device object.
     let mut size: u32 = 0;
@@ -202,7 +202,10 @@ fn output_channels(id: AudioObjectID) -> Result<u32> {
 
 /// Returns all device IDs known to the system.
 fn device_ids() -> Result<Vec<AudioObjectID>> {
-    let mut a = addr(kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal);
+    let mut a = addr(
+        kAudioHardwarePropertyDevices,
+        kAudioObjectPropertyScopeGlobal,
+    );
     // SAFETY: AudioObjectGetPropertyDataSize is called on the system object
     // with a valid property address.
     let mut size: u32 = 0;
@@ -255,9 +258,12 @@ fn device_info(id: AudioObjectID) -> Option<DeviceInfo> {
     if output_channels == 0 {
         return None;
     }
-    let nominal_sample_rate =
-        get_f64(id, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal)
-            .ok();
+    let nominal_sample_rate = get_f64(
+        id,
+        kAudioDevicePropertyNominalSampleRate,
+        kAudioObjectPropertyScopeGlobal,
+    )
+    .ok();
     let transport_type = get_u32(
         id,
         kAudioDevicePropertyTransportType,
@@ -277,10 +283,7 @@ fn device_info(id: AudioObjectID) -> Option<DeviceInfo> {
 
 /// Returns all output devices (those with at least one output channel).
 pub fn output_devices() -> Result<Vec<DeviceInfo>> {
-    Ok(device_ids()?
-        .into_iter()
-        .filter_map(device_info)
-        .collect())
+    Ok(device_ids()?.into_iter().filter_map(device_info).collect())
 }
 
 /// Returns the default output device ID.
@@ -319,23 +322,40 @@ fn set_value<T>(id: AudioObjectID, selector: u32, v: &mut T, context: &'static s
 
 /// Returns the device's transport type (built-in, USB, Bluetooth, ...).
 pub fn transport_type(id: DeviceId) -> Result<u32> {
-    get_u32(id, kAudioDevicePropertyTransportType, kAudioObjectPropertyScopeGlobal)
+    get_u32(
+        id,
+        kAudioDevicePropertyTransportType,
+        kAudioObjectPropertyScopeGlobal,
+    )
 }
 
 /// Returns the device's current nominal sample rate.
 pub fn nominal_sample_rate(id: DeviceId) -> Result<f64> {
-    get_f64(id, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal)
+    get_f64(
+        id,
+        kAudioDevicePropertyNominalSampleRate,
+        kAudioObjectPropertyScopeGlobal,
+    )
 }
 
 /// Returns the nominal sample rates the device supports as (min, max) ranges
 /// (discrete rates have min == max).
 pub fn available_sample_rates(id: DeviceId) -> Result<Vec<(f64, f64)>> {
-    let mut a = addr(kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal);
+    let mut a = addr(
+        kAudioDevicePropertyAvailableNominalSampleRates,
+        kAudioObjectPropertyScopeGlobal,
+    );
     let mut size: u32 = 0;
     // SAFETY: valid property address on a device object.
     unsafe {
         check(
-            AudioObjectGetPropertyDataSize(id, NonNull::from(&mut a), 0, ptr::null(), NonNull::from(&mut size)),
+            AudioObjectGetPropertyDataSize(
+                id,
+                NonNull::from(&mut a),
+                0,
+                ptr::null(),
+                NonNull::from(&mut size),
+            ),
             "AudioObjectGetPropertyDataSize (available rates)",
         )?;
     }
@@ -343,7 +363,13 @@ pub fn available_sample_rates(id: DeviceId) -> Result<Vec<(f64, f64)>> {
     if n == 0 {
         return Ok(Vec::new());
     }
-    let mut ranges = vec![AudioValueRange { mMinimum: 0.0, mMaximum: 0.0 }; n];
+    let mut ranges = vec![
+        AudioValueRange {
+            mMinimum: 0.0,
+            mMaximum: 0.0
+        };
+        n
+    ];
     // SAFETY: `ranges` holds `n * sizeof(AudioValueRange)` = `size` bytes.
     unsafe {
         check(
@@ -372,14 +398,21 @@ pub fn set_nominal_sample_rate(id: DeviceId, rate: f64) -> Result<()> {
         return Ok(());
     }
     let mut v = rate;
-    set_value(id, kAudioDevicePropertyNominalSampleRate, &mut v, "AudioObjectSetPropertyData (nominal rate)")?;
+    set_value(
+        id,
+        kAudioDevicePropertyNominalSampleRate,
+        &mut v,
+        "AudioObjectSetPropertyData (nominal rate)",
+    )?;
     let deadline = Instant::now() + RATE_CHANGE_TIMEOUT;
     loop {
         if (nominal_sample_rate(id)? - rate).abs() < 0.5 {
             return Ok(());
         }
         if Instant::now() > deadline {
-            return Err(CoreAudioError::Unsupported(format!("device did not switch to {rate} Hz")));
+            return Err(CoreAudioError::Unsupported(format!(
+                "device did not switch to {rate} Hz"
+            )));
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -388,7 +421,12 @@ pub fn set_nominal_sample_rate(id: DeviceId, rate: f64) -> Result<()> {
 /// The pid that holds exclusive (hog) access to the device, or -1 if none.
 pub fn hog_owner(id: DeviceId) -> Result<i32> {
     // pid_t is a 32-bit signed integer; read the raw bits.
-    get_u32(id, kAudioDevicePropertyHogMode, kAudioObjectPropertyScopeGlobal).map(|v| v as i32)
+    get_u32(
+        id,
+        kAudioDevicePropertyHogMode,
+        kAudioObjectPropertyScopeGlobal,
+    )
+    .map(|v| v as i32)
 }
 
 /// Takes (`on`) or releases exclusive access to the device for this process.
@@ -407,11 +445,18 @@ pub fn set_hog(id: DeviceId, on: bool) -> Result<()> {
         )));
     }
     let mut v: i32 = me;
-    set_value(id, kAudioDevicePropertyHogMode, &mut v, "AudioObjectSetPropertyData (hog mode)")?;
+    set_value(
+        id,
+        kAudioDevicePropertyHogMode,
+        &mut v,
+        "AudioObjectSetPropertyData (hog mode)",
+    )?;
     if (hog_owner(id)? == me) == on {
         Ok(())
     } else {
-        Err(CoreAudioError::Unsupported("hog mode change was not applied".into()))
+        Err(CoreAudioError::Unsupported(
+            "hog mode change was not applied".into(),
+        ))
     }
 }
 

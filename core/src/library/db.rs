@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use super::{LibraryError, TrackMeta};
 
@@ -94,8 +94,10 @@ impl Library {
     /// Register a folder. Returns the folder id (new or existing).
     pub fn add_folder(&self, path: &Path) -> Result<i64, LibraryError> {
         let path_str = path.to_string_lossy();
-        self.conn
-            .execute("INSERT OR IGNORE INTO folders(path) VALUES (?1)", params![path_str])?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO folders(path) VALUES (?1)",
+            params![path_str],
+        )?;
         let id = self.conn.query_row(
             "SELECT id FROM folders WHERE path = ?1",
             params![path_str],
@@ -108,14 +110,18 @@ impl Library {
     ///
     /// Requires `foreign_keys=ON` so the cascade deletes tracks.
     pub fn remove_folder(&self, path: &Path) -> Result<(), LibraryError> {
-        self.conn
-            .execute("DELETE FROM folders WHERE path = ?1", params![path.to_string_lossy()])?;
+        self.conn.execute(
+            "DELETE FROM folders WHERE path = ?1",
+            params![path.to_string_lossy()],
+        )?;
         Ok(())
     }
 
     /// Return all registered folders ordered by path.
     pub fn folders(&self) -> Result<Vec<(i64, PathBuf)>, LibraryError> {
-        let mut stmt = self.conn.prepare("SELECT id, path FROM folders ORDER BY path")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, path FROM folders ORDER BY path")?;
         let rows = stmt.query_map([], |row| {
             let path: String = row.get(1)?;
             Ok((row.get(0)?, PathBuf::from(path)))
@@ -124,16 +130,16 @@ impl Library {
     }
 
     /// File states for every track in *folder_id*.
-    pub fn file_states(
-        &self,
-        folder_id: i64,
-    ) -> Result<HashMap<PathBuf, FileState>, LibraryError> {
+    pub fn file_states(&self, folder_id: i64) -> Result<HashMap<PathBuf, FileState>, LibraryError> {
         let mut stmt = self
             .conn
             .prepare("SELECT path, mtime_ns, size FROM tracks WHERE folder_id = ?1")?;
         let rows = stmt.query_map(params![folder_id], |row| {
             let path: String = row.get(0)?;
-            let state = FileState { mtime_ns: row.get(1)?, size: row.get(2)? };
+            let state = FileState {
+                mtime_ns: row.get(1)?,
+                size: row.get(2)?,
+            };
             Ok((PathBuf::from(path), state))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -151,11 +157,7 @@ impl Library {
         meta: &TrackMeta,
     ) -> Result<(), LibraryError> {
         let path_str = path.to_string_lossy().into_owned();
-        let album_key = format!(
-            "{}\u{1f}{}",
-            meta.effective_album_artist(),
-            meta.album
-        );
+        let album_key = format!("{}\u{1f}{}", meta.effective_album_artist(), meta.album);
         self.conn.execute(
             "INSERT INTO tracks(path, folder_id, mtime_ns, size, title, artist, album, album_artist, album_key, genre, track_no, disc_no, year, duration_ms, sample_rate, bit_depth, channels, bitrate_kbps) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) ON CONFLICT(path) DO UPDATE SET folder_id=excluded.folder_id, mtime_ns=excluded.mtime_ns, size=excluded.size, title=excluded.title, artist=excluded.artist, album=excluded.album, album_artist=excluded.album_artist, album_key=excluded.album_key, genre=excluded.genre, track_no=excluded.track_no, disc_no=excluded.disc_no, year=excluded.year, duration_ms=excluded.duration_ms, sample_rate=excluded.sample_rate, bit_depth=excluded.bit_depth, channels=excluded.channels, bitrate_kbps=excluded.bitrate_kbps",
             params![
@@ -184,8 +186,10 @@ impl Library {
 
     /// Remove a single track by path.
     pub fn remove_track(&self, path: &Path) -> Result<(), LibraryError> {
-        self.conn
-            .execute("DELETE FROM tracks WHERE path = ?1", params![path.to_string_lossy()])?;
+        self.conn.execute(
+            "DELETE FROM tracks WHERE path = ?1",
+            params![path.to_string_lossy()],
+        )?;
         Ok(())
     }
 
@@ -396,10 +400,8 @@ mod tests {
         };
         let mut meta = sample_meta();
         meta.title = "tx_test".into();
-        lib.transaction(|tx| {
-            tx.upsert_track(folder_id, &file_path, state, &meta)
-        })
-        .unwrap();
+        lib.transaction(|tx| tx.upsert_track(folder_id, &file_path, state, &meta))
+            .unwrap();
         assert_eq!(lib.track_count().unwrap(), 1);
     }
 

@@ -23,7 +23,9 @@ pub fn make_thumbnail_jpeg(bytes: &[u8], max: u32) -> Option<Vec<u8>> {
     };
     let rgb = img.to_rgb8();
     let mut out = Vec::new();
-    JpegEncoder::new_with_quality(&mut out, 85).encode_image(&rgb).ok()?;
+    JpegEncoder::new_with_quality(&mut out, 85)
+        .encode_image(&rgb)
+        .ok()?;
     Some(out)
 }
 

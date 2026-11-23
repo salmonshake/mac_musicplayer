@@ -1,13 +1,13 @@
+use super::{DecodeError, Decoder, StreamInfo};
 use std::fs::File;
 use std::path::Path;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymError;
-use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::Timestamp;
-use super::{Decoder, DecodeError, StreamInfo};
 
 pub struct VorbisDecoder {
     format: Box<dyn FormatReader>,
@@ -27,13 +27,35 @@ impl VorbisDecoder {
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
         let mut hint = Hint::new();
         hint.with_extension("ogg");
-        let format = symphonia::default::get_probe().probe(&hint, mss, FormatOptions::default(), MetadataOptions::default()).map_err(|e| DecodeError::Codec(e.to_string()))?;
-        let track = format.default_track(TrackType::Audio).ok_or(DecodeError::NoAudioTrack)?;
+        let format = symphonia::default::get_probe()
+            .probe(
+                &hint,
+                mss,
+                FormatOptions::default(),
+                MetadataOptions::default(),
+            )
+            .map_err(|e| DecodeError::Codec(e.to_string()))?;
+        let track = format
+            .default_track(TrackType::Audio)
+            .ok_or(DecodeError::NoAudioTrack)?;
         let track_id = track.id;
-        let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or(DecodeError::NoAudioTrack)?;
-        let sample_rate = params.sample_rate.ok_or_else(|| DecodeError::Unsupported("unknown sample rate".into()))?;
-        let channels = params.channels.as_ref().map(|c| c.count() as u32).filter(|&c| c > 0).ok_or_else(|| DecodeError::Unsupported("unknown channel count".into()))?;
-        let decoder = symphonia::default::get_codecs().make_audio_decoder(params, &AudioDecoderOptions::default()).map_err(|e| DecodeError::Codec(e.to_string()))?;
+        let params = track
+            .codec_params
+            .as_ref()
+            .and_then(|p| p.audio())
+            .ok_or(DecodeError::NoAudioTrack)?;
+        let sample_rate = params
+            .sample_rate
+            .ok_or_else(|| DecodeError::Unsupported("unknown sample rate".into()))?;
+        let channels = params
+            .channels
+            .as_ref()
+            .map(|c| c.count() as u32)
+            .filter(|&c| c > 0)
+            .ok_or_else(|| DecodeError::Unsupported("unknown channel count".into()))?;
+        let decoder = symphonia::default::get_codecs()
+            .make_audio_decoder(params, &AudioDecoderOptions::default())
+            .map_err(|e| DecodeError::Codec(e.to_string()))?;
 
         // Compute ts_per_frame: how many timestamp units correspond to 1 frame (1/sample_rate seconds).
         let ts_per_frame: f64 = match track.time_base {
@@ -75,7 +97,8 @@ impl Decoder for VorbisDecoder {
         while written < want {
             if self.pending_pos < self.pending.len() {
                 let n = (self.pending.len() - self.pending_pos).min(want - written);
-                buf[written..written + n].copy_from_slice(&self.pending[self.pending_pos..self.pending_pos + n]);
+                buf[written..written + n]
+                    .copy_from_slice(&self.pending[self.pending_pos..self.pending_pos + n]);
                 self.pending_pos += n;
                 written += n;
                 continue;
@@ -119,7 +142,10 @@ impl Decoder for VorbisDecoder {
         self.pending_pos = 0;
         self.eof = false;
         let ts = Timestamp::new((frame as f64 * self.ts_per_frame).round() as i64);
-        let seek_to = SeekTo::Timestamp { ts, track_id: self.track_id };
+        let seek_to = SeekTo::Timestamp {
+            ts,
+            track_id: self.track_id,
+        };
         match self.format.seek(SeekMode::Accurate, seek_to) {
             Ok(_) => {
                 self.decoder.reset();

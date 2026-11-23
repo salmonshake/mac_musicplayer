@@ -2,7 +2,10 @@ use mmp_core::decode;
 use std::path::PathBuf;
 
 fn testdata(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("testdata").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("testdata")
+        .join(name)
 }
 
 fn check(name: &str, rate: f64, expected_frames: i64) {
@@ -18,7 +21,9 @@ fn check(name: &str, rate: f64, expected_frames: i64) {
     let mut buf = vec![0.0f32; 4096 * 2];
     let mut total: i64 = 0;
     loop {
-        let n = d.read(&mut buf).unwrap_or_else(|e| panic!("{name}: read failed: {e}"));
+        let n = d
+            .read(&mut buf)
+            .unwrap_or_else(|e| panic!("{name}: read failed: {e}"));
         if n == 0 {
             break;
         }

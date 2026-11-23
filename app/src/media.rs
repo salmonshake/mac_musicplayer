@@ -3,7 +3,10 @@
 use eframe::egui;
 use mmp_core::library::TrackRow;
 use mmp_core::player::{PlayState, PlayerStatus};
-use souvlaki::{MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, MediaControls, PlatformConfig, SeekDirection};
+use souvlaki::{
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
+    SeekDirection,
+};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
@@ -34,7 +37,13 @@ pub fn media_action(
 ) -> Option<MediaAction> {
     use MediaAction as M;
     // Clamp to the track length only when it is known.
-    let clamp = |ms: u64| if duration_ms > 0 { ms.min(duration_ms) } else { ms };
+    let clamp = |ms: u64| {
+        if duration_ms > 0 {
+            ms.min(duration_ms)
+        } else {
+            ms
+        }
+    };
     let seek = |dir: &SeekDirection, by: u64| {
         M::SeekTo(match dir {
             SeekDirection::Forward => clamp(position_ms.saturating_add(by)),
@@ -87,11 +96,18 @@ impl MediaKeys {
         };
         let mut controls = MediaControls::new(config).ok()?;
         let (tx, rx) = mpsc::channel();
-        controls.attach(move |ev| {
-            let _ = tx.send(ev);
-            ctx.request_repaint();
-        }).ok()?;
-        Some(Self { controls, rx, last_path: None, last_playback: None })
+        controls
+            .attach(move |ev| {
+                let _ = tx.send(ev);
+                ctx.request_repaint();
+            })
+            .ok()?;
+        Some(Self {
+            controls,
+            rx,
+            last_path: None,
+            last_playback: None,
+        })
     }
 
     /// Events received since the last call (non-blocking).
@@ -117,7 +133,9 @@ impl MediaKeys {
         }
         let key = (now.state, now.position_ms / 1000);
         if self.last_playback != Some(key) {
-            let _ = self.controls.set_playback(playback_for(now.state, now.position_ms));
+            let _ = self
+                .controls
+                .set_playback(playback_for(now.state, now.position_ms));
             self.last_playback = Some(key);
         }
     }
@@ -140,10 +158,7 @@ mod tests {
             Some(MediaAction::Prev)
         );
         // Raise → None
-        assert_eq!(
-            media_action(&MediaControlEvent::Raise, 0, 0),
-            None
-        );
+        assert_eq!(media_action(&MediaControlEvent::Raise, 0, 0), None);
     }
 
     #[test]
@@ -153,13 +168,21 @@ mod tests {
 
         // Seek(Forward) → SeekTo(15000)
         assert_eq!(
-            media_action(&MediaControlEvent::Seek(SeekDirection::Forward), position, duration),
+            media_action(
+                &MediaControlEvent::Seek(SeekDirection::Forward),
+                position,
+                duration
+            ),
             Some(MediaAction::SeekTo(15_000))
         );
 
         // Seek(Backward) → SeekTo(0)
         assert_eq!(
-            media_action(&MediaControlEvent::Seek(SeekDirection::Backward), position, duration),
+            media_action(
+                &MediaControlEvent::Seek(SeekDirection::Backward),
+                position,
+                duration
+            ),
             Some(MediaAction::SeekTo(0))
         );
 
@@ -192,7 +215,11 @@ mod tests {
             Some(MediaAction::SeekTo(15_000))
         );
         assert_eq!(
-            media_action(&MediaControlEvent::SetPosition(MediaPosition(Duration::from_secs(30))), 0, 0),
+            media_action(
+                &MediaControlEvent::SetPosition(MediaPosition(Duration::from_secs(30))),
+                0,
+                0
+            ),
             Some(MediaAction::SeekTo(30_000))
         );
     }
@@ -202,12 +229,16 @@ mod tests {
         // Playing + 1500ms → Playing { progress: Some(MediaPosition(1500ms)) }
         assert_eq!(
             playback_for(PlayState::Playing, 1500),
-            MediaPlayback::Playing { progress: Some(MediaPosition(Duration::from_millis(1500))) }
+            MediaPlayback::Playing {
+                progress: Some(MediaPosition(Duration::from_millis(1500)))
+            }
         );
         // Paused + 0ms → Paused { progress: Some(MediaPosition(0ms)) }
         assert_eq!(
             playback_for(PlayState::Paused, 0),
-            MediaPlayback::Paused { progress: Some(MediaPosition(Duration::ZERO)) }
+            MediaPlayback::Paused {
+                progress: Some(MediaPosition(Duration::ZERO))
+            }
         );
         // Stopped + 999ms → Stopped (no progress)
         assert_eq!(

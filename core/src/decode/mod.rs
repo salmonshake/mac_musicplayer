@@ -1,9 +1,9 @@
-use std::path::Path;
 use crate::coreaudio::error::CoreAudioError;
 pub use crate::coreaudio::ext_audio_file::StreamInfo;
+use std::path::Path;
 
-pub mod vorbis;
 pub mod ext;
+pub mod vorbis;
 
 /// 音声ファイルをデコードするためのトレイト
 pub trait Decoder: Send {

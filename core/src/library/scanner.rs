@@ -5,12 +5,12 @@
 //! progress through an `mpsc` channel.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::{self, JoinHandle};
 
+use super::ScanStats;
 use super::db::Library;
 use super::scan::scan_folder;
-use super::ScanStats;
 
 /// Event emitted by the background scanner.
 #[derive(Debug, Clone)]
@@ -84,10 +84,7 @@ fn run(db_path: PathBuf, tx: Sender<ScanEvent>) {
         });
         match scan_folder(&mut lib, &folder) {
             Ok(stats) => {
-                let _ = tx.send(ScanEvent::Finished {
-                    folder,
-                    stats,
-                });
+                let _ = tx.send(ScanEvent::Finished { folder, stats });
             }
             Err(e) => {
                 let _ = tx.send(ScanEvent::Failed {

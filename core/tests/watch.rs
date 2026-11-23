@@ -11,7 +11,10 @@ fn copy_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Erro
     use walkdir::WalkDir;
     for entry in WalkDir::new(src).follow_links(false) {
         let entry = entry?;
-        let relative = entry.path().strip_prefix(src).map_err(|e| format!("strip_prefix: {e}"))?;
+        let relative = entry
+            .path()
+            .strip_prefix(src)
+            .map_err(|e| format!("strip_prefix: {e}"))?;
         let target = dst.join(relative);
         if entry.file_type().is_dir() {
             fs::create_dir_all(&target)?;
@@ -61,20 +64,23 @@ fn watcher_detects_new_file() {
     // become visible to the watcher's connection (SQLite WAL mode issue).
     {
         let _lib = mmp_core::library::Library::open(&db_path).expect("reopen library");
-        assert_eq!(_lib.track_count().expect("count"), 4, "initial scan should have 4 tracks (broken.mp3 is an error)");
+        assert_eq!(
+            _lib.track_count().expect("count"),
+            4,
+            "initial scan should have 4 tracks (broken.mp3 is an error)"
+        );
     }
 
     // Start the watcher with a 300 ms debounce.
-    let (watcher, events) = LibraryWatcher::start(db_path.clone(), Duration::from_millis(300))
-        .expect("start watcher");
+    let (watcher, events) =
+        LibraryWatcher::start(db_path.clone(), Duration::from_millis(300)).expect("start watcher");
 
     // Wait for the watcher to initialise its OS watches.
     std::thread::sleep(Duration::from_millis(500));
 
     // Copy a new FLAC file into the watched folder.
     let new_flac = root.join("AlbumB").join("new.flac");
-    fs::copy(root.join("notag.flac"), &new_flac)
-        .expect("copy notag.flac as new.flac");
+    fs::copy(root.join("notag.flac"), &new_flac).expect("copy notag.flac as new.flac");
 
     // Collect events until we receive a Finished event (skip Started).
     let stats = loop {
@@ -98,7 +104,11 @@ fn watcher_detects_new_file() {
 
     // Re-open the database and verify the track count is now 5.
     let lib = mmp_core::library::Library::open(&db_path).expect("reopen library");
-    assert_eq!(lib.track_count().expect("count"), 5, "five tracks in DB after watcher scan");
+    assert_eq!(
+        lib.track_count().expect("count"),
+        5,
+        "five tracks in DB after watcher scan"
+    );
     drop(lib);
     drop(db_dir);
 

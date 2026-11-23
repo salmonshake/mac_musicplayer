@@ -16,7 +16,11 @@ fn test_output_devices() {
 
     // All returned devices must have output_channels > 0 and non-empty uid.
     for d in &devices {
-        assert!(d.output_channels > 0, "device {} has 0 output channels", d.id);
+        assert!(
+            d.output_channels > 0,
+            "device {} has 0 output channels",
+            d.id
+        );
         assert!(!d.uid.is_empty(), "device {} has empty uid", d.id);
     }
 

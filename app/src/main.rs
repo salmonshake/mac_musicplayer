@@ -2,8 +2,8 @@ mod artwork;
 mod fonts;
 mod media;
 mod screenshot;
-mod style;
 mod state;
+mod style;
 mod ui;
 
 use eframe::egui;

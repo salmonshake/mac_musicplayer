@@ -89,6 +89,7 @@ impl RowBackground {
     /// Paints a rounded background behind the whole row.
     pub fn paint(self, row: &egui::Response, fill: egui::Color32) {
         let rect = row.rect.shrink2(egui::vec2(0.0, 1.0));
-        self.painter.set(self.idx, egui::Shape::rect_filled(rect, 8.0, fill));
+        self.painter
+            .set(self.idx, egui::Shape::rect_filled(rect, 8.0, fill));
     }
 }

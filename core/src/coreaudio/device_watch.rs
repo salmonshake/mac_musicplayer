@@ -1,15 +1,15 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use objc2_core_audio::{
     AudioObjectAddPropertyListener, AudioObjectID, AudioObjectPropertyAddress,
     AudioObjectRemovePropertyListener, kAudioHardwarePropertyDefaultOutputDevice,
-    kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
-    kAudioObjectPropertyElementMain, kAudioObjectSystemObject,
+    kAudioHardwarePropertyDevices, kAudioObjectPropertyElementMain,
+    kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject,
 };
 
-use crate::coreaudio::error::{check, Result};
+use crate::coreaudio::error::{Result, check};
 
 /// The Core Audio system object used to register property listeners.
 const SYSTEM: AudioObjectID = kAudioObjectSystemObject as AudioObjectID;

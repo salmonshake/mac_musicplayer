@@ -7,10 +7,10 @@ use std::time::UNIX_EPOCH;
 
 use walkdir::WalkDir;
 
-use super::db::Library;
-use super::tags::read_meta;
 use super::FileState;
 use super::LibraryError;
+use super::db::Library;
+use super::tags::read_meta;
 
 /// Statistics returned by a single scan.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -48,7 +48,12 @@ pub fn is_audio_path(path: &Path) -> bool {
 /// Returns `None` when the file cannot be stat'd.
 fn file_state(path: &Path) -> Option<FileState> {
     let md = fs::metadata(path).ok()?;
-    let mtime_ns = md.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_nanos() as i64;
+    let mtime_ns = md
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_nanos() as i64;
     let size = md.len() as i64;
     Some(FileState { mtime_ns, size })
 }

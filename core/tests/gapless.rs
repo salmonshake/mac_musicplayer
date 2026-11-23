@@ -2,7 +2,10 @@ use mmp_core::decode;
 use std::path::PathBuf;
 
 fn testdata(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("testdata").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("testdata")
+        .join(name)
 }
 
 fn decode_all(name: &str) -> Option<Vec<f32>> {
@@ -66,7 +69,10 @@ fn check_seam(ext: &str) {
             cur_run = 0;
         }
     }
-    assert!(max_silent_run < 32, "{ext}: silent run of {max_silent_run} samples at seam");
+    assert!(
+        max_silent_run < 32,
+        "{ext}: silent run of {max_silent_run} samples at seam"
+    );
 }
 
 #[test]

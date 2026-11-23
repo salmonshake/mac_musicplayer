@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use rtrb::{Producer, RingBuffer};
 
 use super::queue::{Queue, RepeatMode};
-use crate::coreaudio::device::{self, find_output_device_by_uid, DeviceId};
+use crate::coreaudio::device::{self, DeviceId, find_output_device_by_uid};
 use crate::coreaudio::device_watch::{DeviceEvent, DeviceWatcher};
 use crate::coreaudio::output::{OutputUnit, RenderShared};
 use crate::decode::{self, Decoder, StreamInfo};
@@ -129,11 +129,7 @@ impl Player {
             .name("mmp-player".into())
             .spawn(move || engine_main(rx, st, device_uid))
             .ok();
-        Self {
-            tx,
-            status,
-            join,
-        }
+        Self { tx, status, join }
     }
 
     /// Start playing the given queue of files.
@@ -408,7 +404,12 @@ impl Engine {
                 }
             }
             Command::JumpTo(item) => {
-                if self.queue.as_mut().and_then(|q| q.jump_to_item(item)).is_some() {
+                if self
+                    .queue
+                    .as_mut()
+                    .and_then(|q| q.jump_to_item(item))
+                    .is_some()
+                {
                     self.resume_if_stopped();
                     self.restart_current(0);
                 }
@@ -612,7 +613,9 @@ impl Engine {
         let mut unit = OutputUnit::new(info, consumer, unit_device).map_err(|e| e.to_string())?;
         let shared = unit.shared();
         shared.set_volume(self.effective_volume());
-        let device_rate = self.target_device().and_then(|id| device::nominal_sample_rate(id).ok());
+        let device_rate = self
+            .target_device()
+            .and_then(|id| device::nominal_sample_rate(id).ok());
         self.set_status(|s| s.device_rate = device_rate);
         let running = self.state == PlayState::Playing;
         if running {
@@ -745,8 +748,9 @@ impl Engine {
                 }
             }
             _ => {
-                self.output_note =
-                    Some(format!("output device does not support {rate} Hz; resampling"));
+                self.output_note = Some(format!(
+                    "output device does not support {rate} Hz; resampling"
+                ));
             }
         }
         Some(id)
@@ -864,7 +868,12 @@ impl Engine {
             return;
         };
         let mut changed = false;
-        while self.segments.len() >= 2 && self.segments.get(1).is_some_and(|s| played >= s.start_frame) {
+        while self.segments.len() >= 2
+            && self
+                .segments
+                .get(1)
+                .is_some_and(|s| played >= s.start_frame)
+        {
             self.segments.pop_front();
             if let (Some(q), Some(seg)) = (self.queue.as_mut(), self.segments.front()) {
                 q.jump_to_item(seg.item);
@@ -886,11 +895,18 @@ impl Engine {
         if self.pending_pos < self.pending.len() {
             return;
         }
-        let drained = self.out.as_ref().is_some_and(|o| o.producer.slots() >= o.capacity);
+        let drained = self
+            .out
+            .as_ref()
+            .is_some_and(|o| o.producer.slots() >= o.capacity);
         if !drained {
             return;
         }
-        let next = self.queue.as_mut().and_then(|q| q.advance_on_end()).is_some();
+        let next = self
+            .queue
+            .as_mut()
+            .and_then(|q| q.advance_on_end())
+            .is_some();
         if next {
             self.restart_current(0);
         } else {
@@ -936,7 +952,10 @@ impl Engine {
     // ---- position / status ------------------------------------------------
 
     fn frames_written(&self) -> u64 {
-        let ch = self.out.as_ref().map_or(1, |o| u64::from(o.info.channels.max(1)));
+        let ch = self
+            .out
+            .as_ref()
+            .map_or(1, |o| u64::from(o.info.channels.max(1)));
         self.samples_written / ch
     }
 
@@ -974,7 +993,11 @@ impl Engine {
     /// Publish the current track, queue view and state.
     fn publish_track(&mut self) {
         let current = self.segments.front().map(|s| (s.item, s.path.clone()));
-        let upcoming = self.queue.as_ref().map(|q| q.upcoming()).unwrap_or_default();
+        let upcoming = self
+            .queue
+            .as_ref()
+            .map(|q| q.upcoming())
+            .unwrap_or_default();
         let pos = self.position_ms();
         let st = self.state;
         self.set_status(|s| {
@@ -1006,11 +1029,13 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
 
-    use super::{Player, PlayState};
+    use super::{PlayState, Player};
 
     /// Helper: create a minimal queue of paths for testing.
     fn make_paths(n: usize) -> Vec<PathBuf> {
-        (0..n).map(|i| PathBuf::from(format!("/tmp/{i}.flac"))).collect()
+        (0..n)
+            .map(|i| PathBuf::from(format!("/tmp/{i}.flac")))
+            .collect()
     }
 
     #[test]
@@ -1067,7 +1092,9 @@ mod tests {
     // ---- playback tests (real output device, volume 0) --------------------
 
     fn testdata(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../testdata").join(name)
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../testdata")
+            .join(name)
     }
 
     fn have(names: &[&str]) -> bool {
@@ -1110,14 +1137,18 @@ mod tests {
         }
         let p = muted_player();
         p.play_queue(vec![testdata("gap_a.flac")], 0);
-        let s = wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing)
-            .expect("should start playing");
+        let s = wait_for(&p, Duration::from_secs(1), |s| {
+            s.state == PlayState::Playing
+        })
+        .expect("should start playing");
         assert_eq!(s.current_item, Some(0));
         std::thread::sleep(Duration::from_secs(1));
         let pos = p.status().position_ms;
         assert!((700..=1400).contains(&pos), "position after 1s: {pos}");
-        wait_for(&p, Duration::from_secs(4), |s| s.state == PlayState::Stopped)
-            .expect("should stop after the track ends");
+        wait_for(&p, Duration::from_secs(4), |s| {
+            s.state == PlayState::Stopped
+        })
+        .expect("should stop after the track ends");
     }
 
     #[test]
@@ -1127,7 +1158,10 @@ mod tests {
         }
         let p = muted_player();
         p.play_queue(vec![testdata("gap_a.flac")], 0);
-        wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing).expect("playing");
+        wait_for(&p, Duration::from_secs(1), |s| {
+            s.state == PlayState::Playing
+        })
+        .expect("playing");
         p.seek_ms(2000);
         std::thread::sleep(Duration::from_millis(150));
         let pos = p.status().position_ms;
@@ -1141,11 +1175,20 @@ mod tests {
         }
         let p = muted_player();
         p.play_queue(vec![testdata("gap_a.flac"), testdata("gap_b.flac")], 0);
-        wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing).expect("playing");
+        wait_for(&p, Duration::from_secs(1), |s| {
+            s.state == PlayState::Playing
+        })
+        .expect("playing");
         p.next();
-        let s = wait_for(&p, Duration::from_millis(500), |s| s.current_item == Some(1))
-            .expect("next should move to item 1");
-        assert!(s.position_ms < 500, "next should start from the top: {}", s.position_ms);
+        let s = wait_for(&p, Duration::from_millis(500), |s| {
+            s.current_item == Some(1)
+        })
+        .expect("next should move to item 1");
+        assert!(
+            s.position_ms < 500,
+            "next should start from the top: {}",
+            s.position_ms
+        );
     }
 
     #[test]
@@ -1155,19 +1198,31 @@ mod tests {
         }
         let p = muted_player();
         p.play_queue(vec![testdata("gap_a.flac")], 0);
-        wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing).expect("playing");
+        wait_for(&p, Duration::from_secs(1), |s| {
+            s.state == PlayState::Playing
+        })
+        .expect("playing");
         std::thread::sleep(Duration::from_millis(300));
         p.toggle_pause();
-        wait_for(&p, Duration::from_millis(300), |s| s.state == PlayState::Paused).expect("paused");
+        wait_for(&p, Duration::from_millis(300), |s| {
+            s.state == PlayState::Paused
+        })
+        .expect("paused");
         std::thread::sleep(Duration::from_millis(100));
         let a = p.status().position_ms;
         std::thread::sleep(Duration::from_millis(400));
         let b = p.status().position_ms;
-        assert!(b.abs_diff(a) <= 60, "position moved while paused: {a} -> {b}");
+        assert!(
+            b.abs_diff(a) <= 60,
+            "position moved while paused: {a} -> {b}"
+        );
         p.toggle_pause();
         std::thread::sleep(Duration::from_millis(400));
         let c = p.status().position_ms;
-        assert!(c >= b + 200, "position should advance after resume: {b} -> {c}");
+        assert!(
+            c >= b + 200,
+            "position should advance after resume: {b} -> {c}"
+        );
     }
 
     #[test]
@@ -1185,8 +1240,10 @@ mod tests {
             (Duration::from_millis(2700)..=Duration::from_millis(3600)).contains(&switched),
             "switched at {switched:?}"
         );
-        wait_for(&p, Duration::from_secs(4), |s| s.state == PlayState::Stopped)
-            .expect("should stop after both tracks");
+        wait_for(&p, Duration::from_secs(4), |s| {
+            s.state == PlayState::Stopped
+        })
+        .expect("should stop after both tracks");
         let total = t0.elapsed();
         assert!(
             (Duration::from_millis(5700)..=Duration::from_millis(7000)).contains(&total),
@@ -1199,19 +1256,25 @@ mod tests {
         if !have(&["long_60s.flac"]) {
             return;
         }
-        let Some(uid) = crate::coreaudio::device::default_output_device().ok().and_then(|id| {
-            crate::coreaudio::device::output_devices()
-                .ok()?
-                .into_iter()
-                .find(|d| d.id == id)
-                .map(|d| d.uid)
-        }) else {
+        let Some(uid) = crate::coreaudio::device::default_output_device()
+            .ok()
+            .and_then(|id| {
+                crate::coreaudio::device::output_devices()
+                    .ok()?
+                    .into_iter()
+                    .find(|d| d.id == id)
+                    .map(|d| d.uid)
+            })
+        else {
             eprintln!("skip: no default output device");
             return;
         };
         let p = muted_player();
         p.play_queue(vec![testdata("long_60s.flac")], 0);
-        wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing).expect("playing");
+        wait_for(&p, Duration::from_secs(1), |s| {
+            s.state == PlayState::Playing
+        })
+        .expect("playing");
         std::thread::sleep(Duration::from_millis(500));
         let before = p.status().position_ms;
         // Explicit UID of the default device: a different unit, same position.
@@ -1219,7 +1282,11 @@ mod tests {
         std::thread::sleep(Duration::from_millis(400));
         let s = p.status();
         assert_eq!(s.state, PlayState::Playing);
-        assert!(s.position_ms >= before, "position went back: {before} -> {}", s.position_ms);
+        assert!(
+            s.position_ms >= before,
+            "position went back: {before} -> {}",
+            s.position_ms
+        );
         assert!(s.error.is_none(), "unexpected error: {:?}", s.error);
         // Unknown UID: reported, falls back to the default, keeps playing.
         p.set_device(Some("__no_such_device__".into()));
@@ -1237,9 +1304,14 @@ mod tests {
             return;
         }
         let p = muted_player();
-        p.play_queue(vec![PathBuf::from("/nonexistent/x.flac"), testdata("gap_a.flac")], 0);
-        let s = wait_for(&p, Duration::from_secs(1), |s| s.state == PlayState::Playing)
-            .expect("should play the next openable track");
+        p.play_queue(
+            vec![PathBuf::from("/nonexistent/x.flac"), testdata("gap_a.flac")],
+            0,
+        );
+        let s = wait_for(&p, Duration::from_secs(1), |s| {
+            s.state == PlayState::Playing
+        })
+        .expect("should play the next openable track");
         assert_eq!(s.current_item, Some(1));
         assert!(s.error.is_some(), "the skipped track should be reported");
     }

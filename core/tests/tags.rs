@@ -1,6 +1,6 @@
 //! Tests for tag reading (Task 5.2).
 
-use mmp_core::library::{read_meta, LibraryError};
+use mmp_core::library::{LibraryError, read_meta};
 use std::path::PathBuf;
 
 fn lib_path() -> PathBuf {
@@ -39,8 +39,16 @@ fn test_flac_with_tags() {
     assert_eq!(meta.year, Some(2024));
     assert_eq!(meta.sample_rate, Some(44100));
     assert_eq!(meta.channels, Some(2));
-    assert!(meta.duration_ms >= 950, "duration_ms {} should be >= 950", meta.duration_ms);
-    assert!(meta.duration_ms <= 1050, "duration_ms {} should be <= 1050", meta.duration_ms);
+    assert!(
+        meta.duration_ms >= 950,
+        "duration_ms {} should be >= 950",
+        meta.duration_ms
+    );
+    assert!(
+        meta.duration_ms <= 1050,
+        "duration_ms {} should be <= 1050",
+        meta.duration_ms
+    );
 }
 
 #[test]

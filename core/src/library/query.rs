@@ -6,14 +6,13 @@
 
 use std::path::PathBuf;
 
-use rusqlite::{params_from_iter, OptionalExtension};
+use rusqlite::{OptionalExtension, params_from_iter};
 
 use super::LibraryError;
 use crate::library::Library;
 
 /// Column list for SELECT queries on the tracks table.
-pub(crate) const TRACK_COLUMNS: &str =
-    "id, path, title, artist, album, album_artist, album_key, genre, \
+pub(crate) const TRACK_COLUMNS: &str = "id, path, title, artist, album, album_artist, album_key, genre, \
      track_no, disc_no, year, duration_ms, sample_rate, bit_depth, bitrate_kbps";
 
 // ---------------------------------------------------------------------------
@@ -187,7 +186,10 @@ impl Library {
             "CASE WHEN album_artist = '' THEN artist ELSE album_artist END COLLATE NOCASE, \
              album COLLATE NOCASE, disc_no IS NULL, disc_no, track_no IS NULL, track_no"
         };
-        let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks {} ORDER BY {order_by}", c.where_sql());
+        let sql = format!(
+            "SELECT {TRACK_COLUMNS} FROM tracks {} ORDER BY {order_by}",
+            c.where_sql()
+        );
 
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(c.params.iter()), track_from_row)?;
@@ -260,7 +262,10 @@ impl Library {
     /// The returned `usize` is the index into the input *paths* slice.
     /// Paths that are not found in the DB are silently skipped, preserving
     /// the original order.
-    pub fn tracks_by_paths(&self, paths: &[PathBuf]) -> Result<Vec<(usize, TrackRow)>, LibraryError> {
+    pub fn tracks_by_paths(
+        &self,
+        paths: &[PathBuf],
+    ) -> Result<Vec<(usize, TrackRow)>, LibraryError> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1");
         let mut stmt = self.conn.prepare(&sql)?;
         let mut out = Vec::new();
@@ -399,7 +404,9 @@ mod tests {
         // 1. Japanese title
         let p1 = write_file("01.flac");
         lib.upsert_track(
-            folder_id, &p1, state,
+            folder_id,
+            &p1,
+            state,
             &TrackMeta {
                 title: "一曲目".into(),
                 artist: "テスト歌手".into(),
@@ -415,12 +422,15 @@ mod tests {
                 channels: Some(2),
                 bitrate_kbps: Some(1_411),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // 2. Empty album_artist
         let p2 = write_file("02.mp3");
         lib.upsert_track(
-            folder_id, &p2, state,
+            folder_id,
+            &p2,
+            state,
             &TrackMeta {
                 title: "二曲目".into(),
                 artist: "別アーティスト".into(),
@@ -436,12 +446,15 @@ mod tests {
                 channels: Some(2),
                 bitrate_kbps: Some(320),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // 3. Same album, disc 1, track 1 (different artist)
         let p3 = write_file("03.flac");
         lib.upsert_track(
-            folder_id, &p3, state,
+            folder_id,
+            &p3,
+            state,
             &TrackMeta {
                 title: "三曲目".into(),
                 artist: "別の歌手".into(),
@@ -457,12 +470,15 @@ mod tests {
                 channels: Some(2),
                 bitrate_kbps: Some(1_411),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // 4. Same album, disc 2, track 2 (multi-disc)
         let p4 = write_file("04.ogg");
         lib.upsert_track(
-            folder_id, &p4, state,
+            folder_id,
+            &p4,
+            state,
             &TrackMeta {
                 title: "四曲目".into(),
                 artist: "別の歌手".into(),
@@ -478,12 +494,15 @@ mod tests {
                 channels: Some(2),
                 bitrate_kbps: Some(128),
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // 5. Empty genre
         let p5 = write_file("notag.flac");
         lib.upsert_track(
-            folder_id, &p5, state,
+            folder_id,
+            &p5,
+            state,
             &TrackMeta {
                 title: "五曲目".into(),
                 artist: "無ジャンル".into(),
@@ -499,12 +518,15 @@ mod tests {
                 channels: Some(2),
                 bitrate_kbps: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // 6. Title containing %
         let p6 = write_file("pure.m4a");
         lib.upsert_track(
-            folder_id, &p6, state,
+            folder_id,
+            &p6,
+            state,
             &TrackMeta {
                 title: "100% Pure".into(),
                 artist: "%アーティスト".into(),
@@ -520,7 +542,8 @@ mod tests {
                 channels: Some(2),
                 bitrate_kbps: Some(256),
             },
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]
@@ -626,7 +649,10 @@ mod tests {
             ..Default::default()
         };
         let tracks = lib.list_tracks(&f).unwrap();
-        assert!(!tracks.is_empty(), "Should find '100% Pure' searching 'pure'");
+        assert!(
+            !tracks.is_empty(),
+            "Should find '100% Pure' searching 'pure'"
+        );
     }
 
     #[test]
@@ -655,7 +681,10 @@ mod tests {
         assert_eq!(albums.len(), 4); // テスト歌手/テストアルバム, 別アーティスト/テストアルバム, 無ジャンル/別アルバム, %アーティスト/%アルバム
 
         // Find テスト歌手's テストアルバム
-        let test_album = albums.iter().find(|a| a.album == "テストアルバム" && a.album_artist == "テスト歌手").unwrap();
+        let test_album = albums
+            .iter()
+            .find(|a| a.album == "テストアルバム" && a.album_artist == "テスト歌手")
+            .unwrap();
         assert_eq!(test_album.track_count, 3); // tracks 1, 3, 4 (track 2 has empty album_artist → excluded)
         assert_eq!(test_album.album_artist, "テスト歌手"); // effective (track 2 uses artist)
     }
@@ -702,15 +731,25 @@ mod tests {
         let folder_id = lib.add_folder(dir.path()).unwrap();
         let p = dir.path().join("test.flac");
         fs::write(&p, "fake").unwrap();
-        let state = FileState { mtime_ns: 1_000_000_000, size: 100 };
+        let state = FileState {
+            mtime_ns: 1_000_000_000,
+            size: 100,
+        };
         lib.upsert_track(
-            folder_id, &p, state,
+            folder_id,
+            &p,
+            state,
             &TrackMeta {
-                title: "t".into(), artist: "a".into(), album: "a".into(),
-                duration_ms: 1000, sample_rate: Some(48000), bit_depth: Some(24),
+                title: "t".into(),
+                artist: "a".into(),
+                album: "a".into(),
+                duration_ms: 1000,
+                sample_rate: Some(48000),
+                bit_depth: Some(24),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let tracks = lib.list_tracks(&TrackFilter::default()).unwrap();
         let label = &tracks[0].format_label();
@@ -724,15 +763,24 @@ mod tests {
         let folder_id = lib.add_folder(dir.path()).unwrap();
         let p = dir.path().join("test.mp3");
         fs::write(&p, "fake").unwrap();
-        let state = FileState { mtime_ns: 1_000_000_000, size: 100 };
+        let state = FileState {
+            mtime_ns: 1_000_000_000,
+            size: 100,
+        };
         lib.upsert_track(
-            folder_id, &p, state,
+            folder_id,
+            &p,
+            state,
             &TrackMeta {
-                title: "t".into(), artist: "a".into(), album: "a".into(),
-                duration_ms: 1000, bitrate_kbps: Some(320),
+                title: "t".into(),
+                artist: "a".into(),
+                album: "a".into(),
+                duration_ms: 1000,
+                bitrate_kbps: Some(320),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let tracks = lib.list_tracks(&TrackFilter::default()).unwrap();
         let label = &tracks[0].format_label();
@@ -746,15 +794,25 @@ mod tests {
         let folder_id = lib.add_folder(dir.path()).unwrap();
         let p = dir.path().join("test.m4a");
         fs::write(&p, "fake").unwrap();
-        let state = FileState { mtime_ns: 1_000_000_000, size: 100 };
+        let state = FileState {
+            mtime_ns: 1_000_000_000,
+            size: 100,
+        };
         lib.upsert_track(
-            folder_id, &p, state,
+            folder_id,
+            &p,
+            state,
             &TrackMeta {
-                title: "t".into(), artist: "a".into(), album: "a".into(),
-                duration_ms: 1000, sample_rate: Some(44100), bit_depth: Some(24),
+                title: "t".into(),
+                artist: "a".into(),
+                album: "a".into(),
+                duration_ms: 1000,
+                sample_rate: Some(44100),
+                bit_depth: Some(24),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let tracks = lib.list_tracks(&TrackFilter::default()).unwrap();
         let label = &tracks[0].format_label();
@@ -768,15 +826,24 @@ mod tests {
         let folder_id = lib.add_folder(dir.path()).unwrap();
         let p = dir.path().join("test.m4a");
         fs::write(&p, "fake").unwrap();
-        let state = FileState { mtime_ns: 1_000_000_000, size: 100 };
+        let state = FileState {
+            mtime_ns: 1_000_000_000,
+            size: 100,
+        };
         lib.upsert_track(
-            folder_id, &p, state,
+            folder_id,
+            &p,
+            state,
             &TrackMeta {
-                title: "t".into(), artist: "a".into(), album: "a".into(),
-                duration_ms: 1000, bitrate_kbps: Some(256),
+                title: "t".into(),
+                artist: "a".into(),
+                album: "a".into(),
+                duration_ms: 1000,
+                bitrate_kbps: Some(256),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let tracks = lib.list_tracks(&TrackFilter::default()).unwrap();
         let label = &tracks[0].format_label();
@@ -790,15 +857,24 @@ mod tests {
         let folder_id = lib.add_folder(dir.path()).unwrap();
         let p = dir.path().join("test.wav");
         fs::write(&p, "fake").unwrap();
-        let state = FileState { mtime_ns: 1_000_000_000, size: 100 };
+        let state = FileState {
+            mtime_ns: 1_000_000_000,
+            size: 100,
+        };
         lib.upsert_track(
-            folder_id, &p, state,
+            folder_id,
+            &p,
+            state,
             &TrackMeta {
-                title: "t".into(), artist: "a".into(), album: "a".into(),
-                duration_ms: 1000, sample_rate: Some(44100),
+                title: "t".into(),
+                artist: "a".into(),
+                album: "a".into(),
+                duration_ms: 1000,
+                sample_rate: Some(44100),
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let tracks = lib.list_tracks(&TrackFilter::default()).unwrap();
         let label = &tracks[0].format_label();
@@ -812,15 +888,23 @@ mod tests {
         let folder_id = lib.add_folder(dir.path()).unwrap();
         let p = dir.path().join("test.ogg");
         fs::write(&p, "fake").unwrap();
-        let state = FileState { mtime_ns: 1_000_000_000, size: 100 };
+        let state = FileState {
+            mtime_ns: 1_000_000_000,
+            size: 100,
+        };
         lib.upsert_track(
-            folder_id, &p, state,
+            folder_id,
+            &p,
+            state,
             &TrackMeta {
-                title: "t".into(), artist: "a".into(), album: "a".into(),
+                title: "t".into(),
+                artist: "a".into(),
+                album: "a".into(),
                 duration_ms: 1000,
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let tracks = lib.list_tracks(&TrackFilter::default()).unwrap();
         let label = &tracks[0].format_label();
@@ -853,14 +937,27 @@ mod tests {
 
         // Grab paths for track 1 (01.flac) and track 2 (02.mp3) from DB.
         let all = lib.list_tracks(&TrackFilter::default()).unwrap();
-        let track1_path = all.iter().find(|t| t.path.to_string_lossy().ends_with("01.flac")).map(|t| t.path.clone()).unwrap();
-        let track2_path = all.iter().find(|t| t.path.to_string_lossy().ends_with("02.mp3")).map(|t| t.path.clone()).unwrap();
+        let track1_path = all
+            .iter()
+            .find(|t| t.path.to_string_lossy().ends_with("01.flac"))
+            .map(|t| t.path.clone())
+            .unwrap();
+        let track2_path = all
+            .iter()
+            .find(|t| t.path.to_string_lossy().ends_with("02.mp3"))
+            .map(|t| t.path.clone())
+            .unwrap();
 
         // Non-existent path.
         let nonexistent = dir.path().join("does_not_exist.flac");
 
         // [b, x, a, b]  →  positions [0, 2, 3], paths [b, a, b]
-        let paths = vec![track2_path.clone(), nonexistent, track1_path.clone(), track2_path.clone()];
+        let paths = vec![
+            track2_path.clone(),
+            nonexistent,
+            track1_path.clone(),
+            track2_path.clone(),
+        ];
         let result = lib.tracks_by_paths(&paths).unwrap();
 
         assert_eq!(result.len(), 3);

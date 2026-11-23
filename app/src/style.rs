@@ -19,10 +19,8 @@ pub fn apply(ctx: &egui::Context) {
             TextStyle::Heading,
             FontId::new(26.0, FontFamily::Proportional),
         );
-        s.text_styles.insert(
-            TextStyle::Body,
-            FontId::new(14.0, FontFamily::Proportional),
-        );
+        s.text_styles
+            .insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
         s.text_styles.insert(
             TextStyle::Button,
             FontId::new(14.0, FontFamily::Proportional),
@@ -96,6 +94,10 @@ pub fn badge(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let size = galley.size() + egui::vec2(12.0, 4.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
     ui.painter().rect_filled(rect, rect.height() / 2.0, ACCENT);
-    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, egui::Color32::WHITE);
+    ui.painter().galley(
+        rect.center() - galley.size() / 2.0,
+        galley,
+        egui::Color32::WHITE,
+    );
     resp
 }

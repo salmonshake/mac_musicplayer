@@ -1,5 +1,5 @@
+use super::{DecodeError, Decoder};
 use crate::coreaudio::ext_audio_file::{ExtAudioFile, StreamInfo};
-use super::{Decoder, DecodeError};
 use std::path::Path;
 
 pub struct ExtDecoder {
@@ -14,7 +14,11 @@ impl ExtDecoder {
         let mut file = ExtAudioFile::open(path)?;
         let info = file.file_info()?;
         file.set_client_f32_interleaved(&info)?;
-        Ok(Self { file, info, at_end: false })
+        Ok(Self {
+            file,
+            info,
+            at_end: false,
+        })
     }
 }
 

@@ -26,13 +26,13 @@ fn khz(rate: f64) -> String {
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     egui::Panel::bottom("player_bar")
         .exact_size(100.0)
-        .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(16, 10)))
+        .frame(
+            egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(16, 10)),
+        )
         .show(ui, |ui| {
             let full = ui.available_rect_before_wrap();
-            let left = egui::Rect::from_min_max(
-                full.min,
-                egui::pos2(full.min.x + LEFT_WIDTH, full.max.y),
-            );
+            let left =
+                egui::Rect::from_min_max(full.min, egui::pos2(full.min.x + LEFT_WIDTH, full.max.y));
             let right = egui::Rect::from_min_max(
                 egui::pos2(full.max.x - RIGHT_WIDTH, full.min.y),
                 full.max,
@@ -43,28 +43,39 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             );
             let region = |rect, layout| egui::UiBuilder::new().max_rect(rect).layout(layout);
 
-            ui.scope_builder(region(left, egui::Layout::left_to_right(egui::Align::Center)), |ui| {
-                track_info(ui, state);
-            });
-            ui.scope_builder(region(center, egui::Layout::top_down(egui::Align::Center)), |ui| {
-                transport(ui, state);
-                ui.add_space(2.0);
-                let width = (center.width() - 140.0).clamp(200.0, 520.0);
-                seek_bar(ui, state, width);
-            });
-            ui.scope_builder(region(right, egui::Layout::right_to_left(egui::Align::Center)), |ui| {
-                if toggle_icon(ui, "☰", state.show_queue, "Up Next").clicked() {
-                    state.show_queue = !state.show_queue;
-                }
-                ui.add_space(8.0);
-                volume(ui, state);
-            });
+            ui.scope_builder(
+                region(left, egui::Layout::left_to_right(egui::Align::Center)),
+                |ui| {
+                    track_info(ui, state);
+                },
+            );
+            ui.scope_builder(
+                region(center, egui::Layout::top_down(egui::Align::Center)),
+                |ui| {
+                    transport(ui, state);
+                    ui.add_space(2.0);
+                    let width = (center.width() - 140.0).clamp(200.0, 520.0);
+                    seek_bar(ui, state, width);
+                },
+            );
+            ui.scope_builder(
+                region(right, egui::Layout::right_to_left(egui::Align::Center)),
+                |ui| {
+                    if toggle_icon(ui, "☰", state.show_queue, "Up Next").clicked() {
+                        state.show_queue = !state.show_queue;
+                    }
+                    ui.add_space(8.0);
+                    volume(ui, state);
+                },
+            );
         });
 }
 
 /// Artwork, bit-perfect badge, title and artist of the playing track.
 fn track_info(ui: &mut egui::Ui, state: &mut AppState) {
-    let art_source = state.now_track().map(|t| (t.album_key.clone(), t.path.clone()));
+    let art_source = state
+        .now_track()
+        .map(|t| (t.album_key.clone(), t.path.clone()));
     let tex = art_source.and_then(|(k, p)| state.art.get(&k, &p));
     crate::artwork::art_image(ui, tex.as_ref(), 56.0);
     ui.add_space(12.0);
@@ -75,12 +86,18 @@ fn track_info(ui: &mut egui::Ui, state: &mut AppState) {
                 Some(r) => format!("Bit-perfect · {}", khz(r)),
                 None => "Bit-perfect".to_string(),
             };
-            ui.label(egui::RichText::new(label).small().color(crate::style::accent_text(ui)));
+            ui.label(
+                egui::RichText::new(label)
+                    .small()
+                    .color(crate::style::accent_text(ui)),
+            );
         }
         match state.now_track() {
             Some(t) => {
-                ui.add(egui::Label::new(egui::RichText::new(&t.title).strong().size(15.0)).truncate())
-                    .on_hover_text(&t.title);
+                ui.add(
+                    egui::Label::new(egui::RichText::new(&t.title).strong().size(15.0)).truncate(),
+                )
+                .on_hover_text(&t.title);
                 ui.add(egui::Label::new(egui::RichText::new(&t.artist).weak()).truncate());
             }
             None => {
@@ -92,7 +109,11 @@ fn track_info(ui: &mut egui::Ui, state: &mut AppState) {
 
 /// Frameless glyph button, drawn in the accent colour while `on`.
 fn toggle_icon(ui: &mut egui::Ui, glyph: &str, on: bool, tip: &str) -> egui::Response {
-    let color = if on { crate::style::accent_text(ui) } else { ui.visuals().text_color() };
+    let color = if on {
+        crate::style::accent_text(ui)
+    } else {
+        ui.visuals().text_color()
+    };
     ui.add(egui::Button::new(egui::RichText::new(glyph).size(18.0).color(color)).frame(false))
         .on_hover_text(tip)
 }
@@ -110,7 +131,8 @@ fn transport(ui: &mut egui::Ui, state: &mut AppState) {
             if toggle_icon(ui, "🔀", state.now.shuffle, "Shuffle").clicked() {
                 state.player.set_shuffle(!state.now.shuffle);
             }
-            let prev = icons::icon_button(ui, 22.0, has_track, |p, r, c| icons::skip(p, r, c, false));
+            let prev =
+                icons::icon_button(ui, 22.0, has_track, |p, r, c| icons::skip(p, r, c, false));
             if prev.on_hover_text("Previous").clicked() {
                 state.player.prev();
             }
@@ -121,10 +143,14 @@ fn transport(ui: &mut egui::Ui, state: &mut AppState) {
                     icons::play(p, r, c)
                 }
             });
-            if play.on_hover_text(if playing { "Pause" } else { "Play" }).clicked() {
+            if play
+                .on_hover_text(if playing { "Pause" } else { "Play" })
+                .clicked()
+            {
                 state.player.toggle_pause();
             }
-            let next = icons::icon_button(ui, 22.0, has_track, |p, r, c| icons::skip(p, r, c, true));
+            let next =
+                icons::icon_button(ui, 22.0, has_track, |p, r, c| icons::skip(p, r, c, true));
             if next.on_hover_text("Next").clicked() {
                 state.player.next();
             }
@@ -144,9 +170,16 @@ fn transport(ui: &mut egui::Ui, state: &mut AppState) {
 /// Volume slider (fixed at 100% in bit-perfect mode) and its percentage.
 fn volume(ui: &mut egui::Ui, state: &mut AppState) {
     let fixed = state.now.bit_perfect;
-    let mut vol = if fixed { 100.0 } else { (state.now.volume * 100.0).round() };
+    let mut vol = if fixed {
+        100.0
+    } else {
+        (state.now.volume * 100.0).round()
+    };
     let r = ui
-        .add_enabled(!fixed, egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false))
+        .add_enabled(
+            !fixed,
+            egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false),
+        )
         .on_disabled_hover_text("Volume is fixed at 100% in bit-perfect mode");
     if r.changed() {
         state.player.set_volume(vol / 100.0);
@@ -169,9 +202,14 @@ fn seek_bar(ui: &mut egui::Ui, state: &mut AppState, width: f32) {
         |ui| {
             ui.label(egui::RichText::new(format_duration(shown)).weak().small());
 
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 14.0), egui::Sense::click_and_drag());
+            let (rect, resp) =
+                ui.allocate_exact_size(egui::vec2(width, 14.0), egui::Sense::click_and_drag());
             let bar = egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), 4.0));
-            let frac = if duration > 0 { shown as f32 / duration as f32 } else { 0.0 };
+            let frac = if duration > 0 {
+                shown as f32 / duration as f32
+            } else {
+                0.0
+            };
             let mut filled = bar;
             filled.set_width(bar.width() * frac.clamp(0.0, 1.0));
             let track_bg = crate::style::subtle_fill(ui, 40);
@@ -196,7 +234,11 @@ fn seek_bar(ui: &mut egui::Ui, state: &mut AppState, width: f32) {
                 }
             }
 
-            ui.label(egui::RichText::new(format_duration(duration)).weak().small());
+            ui.label(
+                egui::RichText::new(format_duration(duration))
+                    .weak()
+                    .small(),
+            );
         },
     );
 }

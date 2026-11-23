@@ -1,5 +1,5 @@
-use eframe::epaint::text::{FontData, FontInsert, FontPriority, FontTweak, InsertFontFamily};
 use eframe::egui;
+use eframe::epaint::text::{FontData, FontInsert, FontPriority, FontTweak, InsertFontFamily};
 use std::path::PathBuf;
 
 /// CJK font candidates on macOS.
