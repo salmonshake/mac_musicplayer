@@ -1,25 +1,55 @@
-## 実装の進め方（指揮役向け）
-- 設計・タスク分解はあなたが行い、docs/plan.mdに書く
-  （1タスク=1〜2ファイル、パス・型・完了条件を明記）
-- 実装は `~/bin/local-worker "指示"` に委譲する。1回の呼び出しで1タスクだけ
-- 指示にはplan.mdのタスク番号と完了条件を含める
-- 委譲後は必ず git diff とビルド/テスト結果を確認してレビューする
-- 問題があれば、具体的な修正指示を付けて再委譲する
-- 自分でコードを直接書くのは、同じタスクでlocal-workerが2回失敗したときだけ
-  - 例外: 音声エンジンのコア（Core Audio FFI・オーディオスレッド/リングバッファの並行処理・再生エンジン）は指揮役が直接書いてよい（ユーザー合意 2026-09-28。ローカルモデルでは細分化しても通らなかったため）
-- タスクが通ったらgit commitする
-- 指揮役はワーカーへの指示ごとに推定時間を設定し（指示と一緒にユーザーへ伝える）、それを超えた場合はワーカーの状態を3分ごとに確認する
-  - 目安: 1関数+テストの UI/ロジック 5分、複数関数 10分、それ以上は分割を検討
-  - 確認するもの: `local-worker:` 行（エスカレーション・RESULT）、`$TMPDIR/local-worker/` の最新ログ、LM Studio のリクエスト状況、`cargo build` のエラー
-  - 確認結果（進んでいるか・詰まっているか）をユーザーに短く報告し、詰まっていれば止めて指示を直す
+# Maplay — 開発ガイド（AI エージェント向け）
 
-## 仕様
-- 全体仕様・絶対ルールは docs/spec.md、GUI イメージは docs/gui-mockup.webp
-- local-worker は終了後に自分で `cargo clippy --workspace --all-targets -D warnings` と `cargo test --workspace` を実行して検証し、
-  失敗（またはターン上限）なら自動で Opus（~/bin/ask-opus）に助言を求めて 1 回だけ再試行する。
-  出力の最終行 `local-worker: RESULT=ok|failed escalated=yes|no` を必ず確認する（ok でもレビューは省略しない）。
-  「2回失敗」の数え方: RESULT=failed を 1 回の失敗とする
+macOS 14+ / Apple Silicon 向けの軽量な音楽プレーヤー。Rust のみで書く。
+
+## 参照
+- 設計と守るべきルール: `docs/spec.md`（日本語）
+- UI のイメージ: `docs/gui-mockup.webp`
+- 使い方・データの保存場所・開発手順: `README.md`
+
+## 構成
+- `core/`（`maplay-core`）— UI 非依存。Core Audio 出力・デバイス、デコード、再生エンジン、ライブラリ（SQLite）、プレイリスト、アートワーク、設定。`cargo test` できる状態を保つ
+- `app/`（`maplay-app`、バイナリ名 `maplay`）— egui/eframe の UI
+
+## 検証コマンド
+変更したら次をすべて通す。clippy の出力は `error` 行と `Finished` 行の両方を確認する（`tail` だけだと失敗を見落とす）。
+
+```sh
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+## コードのルール
+- オーディオコールバック内でロック・アロケーション・I/O・ログ出力をしない
+- 製品コード（tests / examples 以外）で `unwrap()` / `expect()` / `panic!` を使わない。壊れたファイル・タグ無し・読めない形式でも落ちない
+- `unsafe` は `core/src/coreaudio/` の安全ラッパー内だけ。各 `unsafe` ブロックに `// SAFETY:` コメントを書く
+- OSStatus は必ず `coreaudio::error::check()` で検査する
+- Core Audio や crate の API は推測しない。docs.rs / Apple のドキュメントで確認する
+- crate のバージョンは Cargo.toml を正とし、勝手に上げない。依存を足すときは理由を説明する
+- 数万曲を前提にする（一覧は仮想化、スキャンは差分、重い処理はバックグラウンド）
+- 1 回の変更は 1 機能に絞る。スコープ外の機能を足さない
+- UI の文言は英語。コードのコメントは日本語でも英語でもよい
+- 配色は WCAG AA（文字 4.5:1 以上）を満たし、色だけで状態を伝えない
+
+## テストの書き方
+- 音源が必要なテストは、`testdata/` に無ければスキップする（生成は `scripts/gen-test-audio.sh`）
+- 実機の出力デバイスを使うテストは、必ずミュート（音量 0 か無音の音源）にする。デバイスが無い環境ではスキップする
+- タイミングに依存するテストは、結果を上書きせず蓄積して判定する（不安定になりやすい）
+
+## 画面の確認
+環境変数で 1 フレームを PNG に保存して終了できる（画面のロックを解除しておく）。
+
+```sh
+MAPLAY_SCREENSHOT=/tmp/shot.png MAPLAY_THEME=light MAPLAY_NAV=album MAPLAY_PLAY=2 MAPLAY_SELECT=1 \
+  cargo run -q -p maplay-app
+```
+
+文字化け（フォントに無いグリフ）、はみ出し、ライト/ダーク両方のコントラストを見る。
+
+## その他
+- 作業用のメモや個人のツール・ラッパースクリプトなど、製品に属さないものはこのリポジトリに入れない
+- 音源ファイルはコミットしない（`.gitignore` 済み）。テスト音源は生成スクリプトで作る
 
 ## 言語
 - ユーザーへの返答・報告は日本語で書く
-- アプリの UI 文言は英語（docs/gui-mockup.webp に合わせる）。コードのコメントは日本語でも英語でもよい

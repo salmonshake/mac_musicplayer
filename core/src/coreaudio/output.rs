@@ -290,6 +290,11 @@ pub fn render_into(
     }
 }
 
+/// Core Audio render callback; runs on the real-time audio thread.
+///
+/// # Safety
+/// `in_ref_con` must point to the live `RenderState` registered with the unit,
+/// and `io_data` must be null or a valid `AudioBufferList` supplied by Core Audio.
 unsafe extern "C-unwind" fn render_callback(
     in_ref_con: NonNull<c_void>,
     _flags: NonNull<AudioUnitRenderActionFlags>,

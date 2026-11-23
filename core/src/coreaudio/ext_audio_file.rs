@@ -271,4 +271,8 @@ impl Drop for ExtAudioFile {
     }
 }
 
+// SAFETY: `raw` is owned exclusively by this wrapper and never copied out, so
+// moving it to another thread transfers sole use of the Core Audio object. The
+// type is not `Sync` (it holds a raw pointer), so two threads never use the
+// same file at once.
 unsafe impl Send for ExtAudioFile {}

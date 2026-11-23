@@ -36,7 +36,8 @@ fn address(selector: u32) -> AudioObjectPropertyAddress {
 /// Core Audio property listener callback.
 ///
 /// This callback runs on the Core Audio notification thread. It only calls
-/// `Sender::send`, which is non-blocking and cannot fail silently.
+/// `Sender::send`, which does not block; a send error (the receiver was
+/// dropped) is ignored.
 ///
 /// # Safety
 /// The `client_data` pointer must point to a live `Sender<DeviceEvent>`
@@ -50,7 +51,12 @@ unsafe extern "C-unwind" fn listener(
     if client_data.is_null() {
         return 0;
     }
+    // SAFETY: `client_data` is the `Box<Sender>` leaked by `DeviceWatcher::new`
+    // (checked non-null above) and is freed only after the listener is removed.
+    // Only a shared reference is taken; `Sender::send` needs just `&self`.
     let sender = unsafe { &*(client_data as *const Sender<DeviceEvent>) };
+    // SAFETY: Core Audio passes `count` valid property addresses at `addresses`
+    // for the duration of this callback.
     let addrs = unsafe { std::slice::from_raw_parts(addresses.as_ptr(), count as usize) };
     for a in addrs {
         let ev = if a.mSelector == kAudioHardwarePropertyDevices {
@@ -84,9 +90,10 @@ impl DeviceWatcher {
     pub fn new() -> Result<(Self, Receiver<DeviceEvent>)> {
         let (tx, rx) = channel();
         let sender = Box::into_raw(Box::new(tx));
-        // SAFETY: The sender pointer is valid because Box::into_raw leaves
-        // the Box (and its contents) alive on the heap.
         let mut a1 = address(kAudioHardwarePropertyDevices);
+        // SAFETY: `a1` outlives the call, `listener` has the signature Core Audio
+        // expects, and `sender` stays valid (leaked by `Box::into_raw`) until it
+        // is freed after the listener has been removed.
         let s1 = unsafe {
             AudioObjectAddPropertyListener(
                 SYSTEM,
@@ -96,7 +103,10 @@ impl DeviceWatcher {
             )
         };
         if let Err(e) = check(s1, "AudioObjectAddPropertyListener (Devices)") {
-            // Second registration failed — clean up.
+            // The first registration failed, so Core Audio holds no pointer to
+            // `sender`; the remove call is only a precaution (its result is ignored).
+            // SAFETY: same arguments as the add above. `sender` came from
+            // `Box::into_raw` and is freed exactly once, on this early return.
             unsafe {
                 AudioObjectRemovePropertyListener(
                     SYSTEM,
@@ -109,6 +119,7 @@ impl DeviceWatcher {
             return Err(e);
         }
         let mut a2 = address(kAudioHardwarePropertyDefaultOutputDevice);
+        // SAFETY: as for the first registration.
         let s2 = unsafe {
             AudioObjectAddPropertyListener(
                 SYSTEM,
@@ -118,7 +129,10 @@ impl DeviceWatcher {
             )
         };
         if let Err(e) = check(s2, "AudioObjectAddPropertyListener (DefaultOutputDevice)") {
-            // Second registration failed — clean up the first listener too.
+            // Second registration failed — remove the first listener too.
+            // SAFETY: the first listener is registered with exactly these
+            // arguments. `sender` is freed once, on this early return, after the
+            // listener that referenced it has been removed.
             unsafe {
                 AudioObjectRemovePropertyListener(
                     SYSTEM,
@@ -139,6 +153,13 @@ impl Drop for DeviceWatcher {
         let mut a1 = address(kAudioHardwarePropertyDevices);
         let mut a2 = address(kAudioHardwarePropertyDefaultOutputDevice);
         // Ignore return values — we are tearing down.
+        //
+        // SAFETY: both listeners were registered in `new` with these arguments,
+        // and `self.sender` came from `Box::into_raw`; it is freed here exactly
+        // once, after the listeners are removed. This relies on Core Audio not
+        // delivering a notification once `AudioObjectRemovePropertyListener` has
+        // returned — Apple documents the unregistration but does not spell out
+        // waiting for a callback that is already running.
         unsafe {
             AudioObjectRemovePropertyListener(
                 SYSTEM,

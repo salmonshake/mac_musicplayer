@@ -1,8 +1,12 @@
 [package]
 name = "maplay-core"
 version = "0.1.0"
-edition = "2024"
-license = "MIT OR Apache-2.0"
+description = "Playback engine, library and Core Audio bindings for Maplay"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
 
 [lib]
 name = "maplay_core"

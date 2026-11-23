@@ -84,8 +84,8 @@ GUI イメージ: [gui-mockup.webp](gui-mockup.webp)
 - 日本語ソート（読み仮名）は保留
 - Opus は MVP 後に追加検討（libopus の C 依存が入るため）
 
-## 開発の進め方
-以下の順で段階的に実装し、各段階で動作確認・コミットしてから次へ進む。
+## 実装の段階（すべて実装済み）
+以下の順で段階的に実装した。
 1. CLI で FLAC を 1 曲再生（AudioToolbox デコード + Core Audio 出力）
 2. 対応フォーマット拡充（Ogg Vorbis は symphonia）
 3. ギャップレス再生
