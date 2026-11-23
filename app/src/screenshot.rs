@@ -4,8 +4,10 @@
 //! With `MAPLAY_SCREENSHOT` set, these also shape what is captured:
 //! - `MAPLAY_THEME=light|dark` — theme (not saved)
 //! - `MAPLAY_NAV=albums|artists|genres|album` — view (`album` = the first album)
-//! - `MAPLAY_PLAY=<row>` — play that row of the view, muted
+//! - `MAPLAY_PLAY=<row>` — play that row of the view, muted unless
+//!   `MAPLAY_VOLUME=<0-100>` is given (only for silent demo libraries)
 //! - `MAPLAY_SELECT=<row>` — select that row
+//! - `MAPLAY_WINDOW=<width>x<height>` — window size in points
 
 use eframe::egui;
 use maplay_core::settings::ThemeMode;
@@ -19,6 +21,7 @@ pub struct DevHooks {
     open_album: bool,
     play: Option<usize>,
     select: Option<usize>,
+    volume: f32,
 }
 
 impl DevHooks {
@@ -31,6 +34,7 @@ impl DevHooks {
             open_album: std::env::var("MAPLAY_NAV").is_ok_and(|v| v == "album"),
             play: index("MAPLAY_PLAY"),
             select: index("MAPLAY_SELECT"),
+            volume: index("MAPLAY_VOLUME").map_or(0.0, |v| v.min(100) as f32 / 100.0),
         })
     }
 
@@ -61,7 +65,7 @@ impl DevHooks {
                 }
             }
             if let Some(i) = self.play.take() {
-                s.player.set_volume(0.0);
+                s.player.set_volume(self.volume);
                 s.play_from(i);
             }
             if let Some(i) = self.select.take() {
@@ -70,6 +74,14 @@ impl DevHooks {
         }
         self.shot.tick(ctx, s.scanning);
     }
+}
+
+/// Window size from `MAPLAY_WINDOW=<w>x<h>`, only in screenshot mode.
+pub fn window_size() -> Option<[f32; 2]> {
+    std::env::var_os("MAPLAY_SCREENSHOT")?;
+    let v = std::env::var("MAPLAY_WINDOW").ok()?;
+    let (w, h) = v.split_once('x')?;
+    Some([w.trim().parse().ok()?, h.trim().parse().ok()?])
 }
 
 /// Captures one screenshot when the `MAPLAY_SCREENSHOT` environment variable is set.

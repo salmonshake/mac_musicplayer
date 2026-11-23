@@ -8,6 +8,10 @@ Maplay plays the files you already have — no importing, no copying. Point it a
 music folders and it keeps a fast, searchable library in sync. Audio goes straight to
 Core Audio, with gapless playback and an optional bit-perfect mode.
 
+![Maplay showing all tracks in dark mode, with one track playing](docs/screenshots/tracks-dark.png)
+
+<sub>Screenshots use a demo library of fictional artists with generated cover art.</sub>
+
 > **Status:** early (0.1.0). It is developed for daily personal use on Apple Silicon Macs
 > and has been tested on a single machine. Expect rough edges. There are no binary
 > releases yet; build it from source.
@@ -54,6 +58,8 @@ it to other people would need a Developer ID signature and notarization.
 ## Using it
 
 Use **Add folder…** in the sidebar to choose a music folder. Double-click a track to play.
+
+![An album page in light mode](docs/screenshots/album-light.png)
 
 | Key | Action |
 | --- | --- |
@@ -117,8 +123,9 @@ device exists.
 
 With `MAPLAY_SCREENSHOT=<file.png>` set, the app renders one frame to that file and exits.
 Combine it with `MAPLAY_THEME=light|dark`, `MAPLAY_NAV=albums|artists|genres|album`,
-`MAPLAY_PLAY=<row>` (plays muted) and `MAPLAY_SELECT=<row>` to capture a specific state.
-It needs an unlocked screen.
+`MAPLAY_PLAY=<row>` (plays muted) and `MAPLAY_SELECT=<row>` to capture a specific state;
+`MAPLAY_WINDOW=1440x900` sets the window size and `MAPLAY_VOLUME=<0-100>` the playback
+volume (keep it at the default 0 unless the library is silent). It needs an unlocked screen.
 
 ### Documents
 

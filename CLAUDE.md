@@ -42,7 +42,7 @@ cargo test --workspace
 
 ```sh
 MAPLAY_SCREENSHOT=/tmp/shot.png MAPLAY_THEME=light MAPLAY_NAV=album MAPLAY_PLAY=2 MAPLAY_SELECT=1 \
-  cargo run -q -p maplay-app
+  MAPLAY_WINDOW=1440x900 cargo run -q -p maplay-app
 ```
 
 文字化け（フォントに無いグリフ）、はみ出し、ライト/ダーク両方のコントラストを見る。

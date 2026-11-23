@@ -94,7 +94,7 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Maplay")
-            .with_inner_size([1200.0, 760.0])
+            .with_inner_size(screenshot::window_size().unwrap_or([1200.0, 760.0]))
             .with_min_inner_size([800.0, 500.0]),
         ..Default::default()
     };
